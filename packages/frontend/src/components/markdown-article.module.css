@@ -1,135 +1,190 @@
+/*
+ * Rendered Markdown inside Elanor's Prose container. Prose sets the prose
+ * typography and spaces the blocks; these rules give the raw HTML elements the
+ * look of Elanor's Heading, Link, List, Blockquote, Table, InlineCode, and
+ * CodeSnippet components.
+ */
 .body {
-  width: 100%;
-  max-width: 52rem;
-  min-width: 0;
-  margin: 0 auto;
-  padding: clamp(2rem, 5vw, 4.5rem);
-  overflow: auto;
-  font-size: clamp(1.0625rem, 1rem + 0.18vw, 1.1875rem);
-  line-height: 1.62;
+  min-inline-size: 0;
+  max-inline-size: var(--semantic-dimension-size-max-width-text);
+  overflow-wrap: break-word;
 }
 
-.documentBody {
-  max-width: 47rem;
-  min-height: 0;
-  margin: 0;
-  padding: 0 0 2.5rem;
-  overflow: visible;
-}
-
-.readOnly {
-  max-width: 58rem;
-  min-height: 100%;
-  padding-block: clamp(4rem, 9vw, 8rem);
-  overflow: visible;
-}
-
-.body > :first-child {
-  margin-top: 0;
-}
-
-.body :where(h1, h2, h3, h4) {
-  margin: 0.9em 0 0.35em;
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 1.15;
-  scroll-margin-top: 5rem;
+.body :where(h1, h2, h3, h4, h5, h6) {
+  margin-block-end: 0;
+  color: var(--semantic-color-text-primary);
+  font-family: var(--heading-font);
+  scroll-margin-block-start: calc(
+    var(--masthead-height) + var(--semantic-dimension-space-gap-large)
+  );
   text-wrap: balance;
 }
 
 .body h1 {
-  font-size: clamp(1.9rem, 1.75rem + 0.5vw, 2.2rem);
-  font-weight: 500;
+  font: var(--semantic-typography-heading-app-1);
+  font-family: var(--heading-font);
 }
 
 .body h2 {
-  font-size: 1.7rem;
+  font: var(--semantic-typography-heading-app-3);
+  font-family: var(--heading-font);
 }
 
 .body h3 {
-  font-size: 1.3rem;
+  font: var(--semantic-typography-heading-app-4);
+  font-family: var(--heading-font);
 }
 
 .body h4 {
-  font-size: 1.08rem;
+  font: var(--semantic-typography-heading-app-5);
+  font-family: var(--heading-font);
 }
 
-.body :where(p, ul, ol, table, pre, blockquote) {
-  margin: 1em 0;
+.body :where(h5, h6) {
+  font: var(--semantic-typography-heading-app-6);
+  font-family: var(--heading-font);
 }
 
 .body a {
-  color: var(--accent);
-  text-underline-offset: 0.2em;
+  color: var(--semantic-color-text-link);
+  text-decoration: underline;
+  text-decoration-thickness: from-font;
+  text-underline-position: from-font;
+}
+
+.body a:hover {
+  text-decoration-thickness: 10%;
+}
+
+.body a:focus-visible {
+  border-radius: var(--semantic-dimension-radius-small);
+  outline: var(--semantic-dimension-border-width-large) solid var(--semantic-color-focus-ring);
+  outline-offset: var(--semantic-dimension-border-width-medium);
+}
+
+.body :where(ul, ol) {
+  padding-inline-start: var(--semantic-dimension-space-padding-xx-large);
+}
+
+.body li::marker {
+  color: var(--semantic-color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.body li + li {
+  margin-block-start: var(--semantic-dimension-space-gap-small);
 }
 
 .body :where(img, svg) {
-  max-width: 100%;
+  max-inline-size: 100%;
+}
+
+.body hr {
+  border: 0;
+  border-block-start: var(--semantic-dimension-border-width-small) solid
+    var(--semantic-color-border-secondary);
 }
 
 .body blockquote {
-  padding-left: 1rem;
-  border-left: 3px solid var(--border-strong);
-  color: var(--muted);
+  position: relative;
+  margin-inline: 0;
+  padding-inline-start: var(--semantic-dimension-space-padding-xx-large);
+  color: var(--semantic-color-text-secondary);
+}
+
+.body blockquote::before {
+  position: absolute;
+  inset-block-start: -0.18em;
+  inset-inline-start: -0.05em;
+  color: var(--semantic-color-icon-secondary);
+  content: "\201C" / "";
+  font: var(--semantic-typography-heading-marketing-2);
 }
 
 .body pre {
   overflow: auto;
-  padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  padding-block: var(--semantic-dimension-space-padding-medium);
+  padding-inline: var(--semantic-dimension-space-padding-x-large);
+  border-radius: var(--semantic-dimension-radius-small);
   background: var(--code-background);
   color: var(--code-text);
-  font: var(--font-ui) / 1.55 var(--mono);
+  font: var(--semantic-typography-code-primary);
+}
+
+.body pre code {
+  font: inherit;
 }
 
 .body :not(pre) > code {
-  padding: 0.1em 0.3em;
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  background: var(--surface-muted);
-  font-family: var(--mono);
-  font-size: 0.85em;
+  padding-inline: var(--semantic-dimension-space-control-padding-inline-x-small);
+  border-radius: var(--semantic-dimension-radius-small);
+  background: var(--code-background);
+  color: var(--code-text);
+  font: var(--semantic-typography-code-primary);
+  font-size: 0.875em;
+  overflow-wrap: break-word;
 }
 
 .body table {
-  width: 100%;
+  display: block;
+  max-inline-size: 100%;
+  overflow: auto;
+  border-spacing: 0;
   border-collapse: collapse;
 }
 
+.body tr:not(:last-child),
+.body thead tr {
+  border-block-end: var(--semantic-dimension-border-width-small) solid
+    var(--semantic-color-border-secondary);
+}
+
 .body :where(td, th) {
-  padding: 0.45rem 0.7rem;
-  border: 1px solid var(--border);
-  text-align: left;
+  padding-block: var(--semantic-dimension-space-padding-medium);
+  padding-inline: var(--semantic-dimension-space-padding-large);
+  text-align: start;
+  vertical-align: top;
+}
+
+.body :where(td, th):first-child {
+  padding-inline-start: 0;
+}
+
+.body :where(td, th):last-child {
+  padding-inline-end: 0;
+}
+
+.body th {
+  font-weight: var(--semantic-font-weight-ui-emphasis);
 }
 
 .body :global(.inkling-mermaid) {
   position: relative;
-  min-height: 12rem;
+  min-block-size: 12rem;
   overflow: hidden;
-  padding: 1rem;
-  border: 1px solid var(--border);
+  padding: var(--semantic-dimension-space-padding-x-large);
+  border-radius: var(--semantic-dimension-radius-small);
+  box-shadow: inset 0 0 0 var(--semantic-dimension-border-width-small)
+    var(--semantic-color-border-secondary);
   background: var(--mermaid-background);
 }
 
 .body :global(.inkling-mermaid[data-mermaid-error]) {
-  min-height: 0;
+  min-block-size: 0;
   padding: 0;
   overflow: visible;
-  border: 0;
-  background: var(--transparent);
+  box-shadow: none;
+  background: none;
 }
 
 .body :global(.inkling-mermaid > .inkling-mermaid__error) {
-  margin: 0 0 0.5rem;
-  color: var(--danger);
-  font: var(--font-caption) / 1.4 var(--mono);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  margin: 0 0 var(--semantic-dimension-space-gap-small);
+  color: var(--semantic-color-text-negative);
+  font: var(--semantic-typography-ui-secondary);
 }
 
 .body :global(.inkling-mermaid[data-mermaid-error] > pre) {
-  margin-top: 0;
+  margin-block-start: 0;
 }
 
 .body :global(.mermaid-viewport) {
@@ -144,25 +199,30 @@
 
 .body :global(.inkling-mermaid__controls) {
   position: absolute;
-  right: 0.6rem;
-  bottom: 0.6rem;
+  inset-inline-end: var(--semantic-dimension-space-padding-medium);
+  inset-block-end: var(--semantic-dimension-space-padding-medium);
   display: flex;
-  gap: 0.25rem;
+  gap: var(--semantic-dimension-space-gap-x-small);
 }
 
+/* Mermaid's controls are created outside React; they mirror Elanor's secondary compact button. */
 .body :global(.inkling-mermaid__controls button) {
-  padding: 0.35rem 0.55rem;
-  border: 1px solid var(--mermaid-primary-border);
-  background: var(--mermaid-primary);
-  color: var(--mermaid-primary-text);
+  min-inline-size: var(--semantic-dimension-size-small);
+  block-size: var(--semantic-dimension-size-small);
+  padding-inline: var(--semantic-dimension-space-control-padding-inline-x-small);
+  border: 0;
+  border-radius: var(--semantic-dimension-radius-small);
+  background: var(--semantic-color-background-fill-secondary);
+  color: var(--semantic-color-text-on-secondary-fill);
+  cursor: pointer;
+  font: var(--semantic-typography-ui-secondary);
 }
 
-@media (width <= 52rem) {
-  .documentBody {
-    padding-bottom: 1.5rem;
-  }
+.body :global(.inkling-mermaid__controls button:hover) {
+  background: var(--semantic-color-background-fill-secondary-hover);
+}
 
-  .readOnly {
-    padding-block: 3.5rem;
-  }
+.body :global(.inkling-mermaid__controls button:focus-visible) {
+  outline: var(--semantic-dimension-border-width-large) solid var(--semantic-color-focus-ring);
+  outline-offset: var(--semantic-dimension-border-width-medium);
 }

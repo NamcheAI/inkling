@@ -1,0 +1,21 @@
+.popup {
+  inline-size: min(var(--semantic-dimension-size-max-width-modal), 100%);
+}
+
+.small {
+  inline-size: min(var(--semantic-dimension-size-max-width-popover), 100%);
+}
+
+.header {
+  flex-wrap: nowrap;
+}
+
+.header > :first-child {
+  min-inline-size: 0;
+  padding-block-start: var(--semantic-dimension-space-padding-xx-small);
+}
+
+.form {
+  display: grid;
+  gap: var(--semantic-dimension-space-gap-large);
+}

@@ -9,6 +9,8 @@ import type { DecorationSet } from "@codemirror/view";
 import { basicSetup, EditorView } from "codemirror";
 import { Effect, Fiber } from "effect";
 
+import { CloseIcon } from "@earendil-works/elanor-icons-react";
+import { IconButton, Prose } from "@earendil-works/elanor-react";
 import type { DocumentMetadataDto } from "@earendil-works/inkling-protocol";
 import {
   findInklingCodeLanguage,
@@ -22,7 +24,6 @@ import type { PreviewSourceRange } from "../comments.ts";
 import { browserRuntime } from "../effect-runtime.ts";
 import type { HistoryChangeRange } from "../history-diff.ts";
 import { renderMermaid, useThemeRevision } from "../markdown.tsx";
-import { Button } from "./button.tsx";
 import { DocumentPage } from "./document-page.tsx";
 import styles from "./editor.module.css";
 import markdownStyles from "./markdown-article.module.css";
@@ -41,7 +42,6 @@ export interface EditorWorkbenchProps {
   readonly previewLabel?: string | undefined;
   readonly previewRef: React.RefObject<HTMLElement | null>;
   readonly metadata: DocumentMetadataDto;
-  readonly readOnly: boolean;
 }
 
 export function EditorWorkbench({
@@ -58,7 +58,6 @@ export function EditorWorkbench({
   previewLabel,
   previewRef,
   metadata,
-  readOnly,
 }: EditorWorkbenchProps): React.JSX.Element {
   const renderedCallbackRef = useRef(onPreviewRendered);
   const previewScrollerRef = useRef<HTMLDivElement>(null);
@@ -141,27 +140,25 @@ export function EditorWorkbench({
       <div className={styles["previewPane"]} data-preview-pane="">
         <div className={styles["paneLabel"]} data-pane-label="">
           <span>{previewLabel ?? "Preview"}</span>
-          <Button
+          <IconButton
             aria-label="Close preview"
             className={styles["closePreview"]}
-            variant="icon"
             data-preview-close=""
             onClick={onClosePreview}
           >
-            ×
-          </Button>
+            <CloseIcon />
+          </IconButton>
         </div>
         <div className={styles["previewPage"]} data-preview-scroller="" ref={previewScrollerRef}>
           <div className={styles["previewPaper"]}>
             <DocumentPage headings={previewHeadings} metadata={metadata} presentation="preview">
-              <article
+              <Prose
                 aria-label="Rendered document preview"
-                className={`${markdownStyles["body"]} ${markdownStyles["documentBody"]}${
-                  readOnly ? ` ${markdownStyles["readOnly"]}` : ""
-                }`}
+                className={markdownStyles["body"]}
                 data-preview=""
                 onPointerUp={capturePreviewSelection}
-                ref={previewRef}
+                ref={previewRef as React.Ref<HTMLDivElement>}
+                render={<article />}
               />
             </DocumentPage>
           </div>

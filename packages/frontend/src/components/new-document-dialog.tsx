@@ -1,5 +1,14 @@
 import { useState } from "react";
 
+import {
+  Button,
+  Checkbox,
+  ControlAndLabel,
+  Form,
+  Input,
+  Modal,
+  SelectionControlAndLabel,
+} from "@earendil-works/elanor-react";
 import { identifierTag } from "@earendil-works/inkling-core";
 import type { CreateDocumentRequest, DocumentResponse } from "@earendil-works/inkling-protocol";
 
@@ -7,13 +16,9 @@ import type { ApiClientService, ApiError } from "../api.ts";
 import { useAppContext } from "../app-context.tsx";
 import { useEffectAction } from "../effect-hooks.ts";
 import { documentHref, randomId } from "../ui.ts";
-import { Button } from "./button.tsx";
-import { CheckboxField } from "./checkbox-field.tsx";
-import { DialogHeader } from "./dialog-header.tsx";
+import { Dialog } from "./dialog.tsx";
+import styles from "./dialog.module.css";
 import { FormError } from "./form-error.tsx";
-import { ModalDialog } from "./modal-dialog.tsx";
-import styles from "./new-document-dialog.module.css";
-import { TextField } from "./text-field.tsx";
 
 export interface NewDocumentDialogProps {
   readonly api: ApiClientService;
@@ -54,43 +59,42 @@ export function NewDocumentDialog({
   };
 
   return (
-    <ModalDialog
-      aria-labelledby="new-document-dialog-title"
-      className={styles["dialog"]}
-      data-new-dialog=""
-      onDismiss={onDismiss}
+    <Dialog
+      attributes={{ "data-new-dialog": "" }}
+      closeLabel="Close new document dialog"
+      description="Notes suit meeting minutes and sketches; RFCs get a permanent number."
+      onClose={onDismiss}
       open={open}
-      preventDismiss={createDocument.state.pending}
+      pending={createDocument.state.pending}
+      title="New note or RFC"
     >
-      <form data-new-form="" onSubmit={submit}>
-        <DialogHeader
-          closeLabel="Close new document dialog"
-          disabled={createDocument.state.pending}
-          eyebrow="Begin a working head"
-          onClose={onDismiss}
-          title="New note or RFC"
-          titleId="new-document-dialog-title"
-        />
-        <TextField
-          autoFocus
-          label="Title"
-          maxLength={300}
-          name="title"
-          onChange={(event) => setTitle(event.currentTarget.value)}
-          required
-          value={title}
-        />
-        <CheckboxField
-          checked={allocateRfc}
-          label="Create as an RFC and allocate a number"
-          name="rfc"
-          onChange={(event) => setAllocateRfc(event.currentTarget.checked)}
-        />
-        <Button disabled={createDocument.state.pending} type="submit" variant="primary">
-          {createDocument.state.pending ? "Creating…" : allocateRfc ? "Create RFC" : "Create note"}
-        </Button>
+      <Form className={styles["form"]} data-new-form="" onSubmit={submit}>
+        <ControlAndLabel label="Title">
+          <Input
+            autoFocus
+            maxLength={300}
+            name="title"
+            onValueChange={setTitle}
+            required
+            value={title}
+          />
+        </ControlAndLabel>
+        <SelectionControlAndLabel
+          control={
+            <Checkbox.Root checked={allocateRfc} name="rfc" onCheckedChange={setAllocateRfc}>
+              <Checkbox.Indicator />
+            </Checkbox.Root>
+          }
+        >
+          Create as an RFC and allocate a number
+        </SelectionControlAndLabel>
         <FormError data-new-error="">{createDocument.state.error?.message}</FormError>
-      </form>
-    </ModalDialog>
+        <Modal.Actions>
+          <Button pending={createDocument.state.pending} type="submit">
+            {allocateRfc ? "Create RFC" : "Create note"}
+          </Button>
+        </Modal.Actions>
+      </Form>
+    </Dialog>
   );
 }

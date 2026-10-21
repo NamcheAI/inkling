@@ -35,6 +35,13 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@11.15.0
+      - name: Build Elanor from its submodule
+        env:
+          ELANOR_TOKEN: ${{ secrets.ELANOR_TOKEN }}
+        run: |
+          git -c url."https://x-access-token:${ELANOR_TOKEN}@github.com/".insteadOf="git@github.com:" \
+            submodule update --init --depth 1 vendor/elanor-src
+          node scripts/build-elanor.mjs
       - run: pnpm install --frozen-lockfile
       - run: make check
       - name: Check the standalone Cloudflare template

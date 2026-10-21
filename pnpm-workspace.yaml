@@ -1,2 +1,9 @@
 packages:
   - "packages/*"
+  - "vendor/elanor/*"
+
+# The vendored Elanor packages declare React as a peer and ship declarations that import its
+# types; hoisting lets TypeScript resolve them from the vendored directories.
+publicHoistPattern:
+  - "@types/react"
+  - "@types/react-dom"

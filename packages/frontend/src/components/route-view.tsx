@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 
+import { Button, Container, EmptyState, Layout } from "@earendil-works/elanor-react";
 import type {
   AuthenticationStatus,
   CatalogResponse,
@@ -12,7 +13,6 @@ import type { EffectQueryState } from "../effect-hooks.ts";
 import { LabelsScreen } from "../labels-screen.tsx";
 import { TrashScreen } from "../trash-screen.tsx";
 import { WorkspaceScreen } from "../workspace-screen.tsx";
-import { Button } from "./button.tsx";
 import styles from "./route-view.module.css";
 import { SharePasswordScreen } from "./share-password-screen.tsx";
 
@@ -68,19 +68,26 @@ export function RouteView({ navigationKey, refresh, state }: RouteViewProps): Re
   if (model === undefined) {
     if (state.status === "failure") {
       return (
-        <main className={styles["fatal"]} id="app" tabIndex={-1}>
-          <section>
-            <p className={styles["eyebrow"]}>Runtime failure</p>
-            <h1>Inkling could not open.</h1>
-            <p>{state.error.message}</p>
-            <Button variant="primary" data-retry="" onClick={refresh}>
-              Try again
-            </Button>
-          </section>
-        </main>
+        <Layout.Main className={styles["fatal"]} id="app" tabIndex={-1}>
+          <Container>
+            <EmptyState.Root>
+              <EmptyState.Body>
+                <EmptyState.Copy>
+                  <EmptyState.Title level={1}>Inkling could not open.</EmptyState.Title>
+                  <EmptyState.Description>{state.error.message}</EmptyState.Description>
+                </EmptyState.Copy>
+                <EmptyState.Actions>
+                  <Button data-retry="" onClick={refresh}>
+                    Try again
+                  </Button>
+                </EmptyState.Actions>
+              </EmptyState.Body>
+            </EmptyState.Root>
+          </Container>
+        </Layout.Main>
       );
     }
-    return <main aria-busy="true" className={styles["loading"]} id="app" tabIndex={-1} />;
+    return <Layout.Main aria-busy="true" className={styles["loading"]} id="app" tabIndex={-1} />;
   }
 
   switch (model.screen) {
@@ -110,7 +117,9 @@ export function RouteView({ navigationKey, refresh, state }: RouteViewProps): Re
       );
     case "reader":
       return (
-        <Suspense fallback={<main aria-busy="true" className={styles["loading"]} id="app" />}>
+        <Suspense
+          fallback={<Layout.Main aria-busy="true" className={styles["loading"]} id="app" />}
+        >
           <ReaderScreen
             document={model.document}
             publicDocument={model.publicDocument}
@@ -120,7 +129,9 @@ export function RouteView({ navigationKey, refresh, state }: RouteViewProps): Re
       );
     case "editor":
       return (
-        <Suspense fallback={<main aria-busy="true" className={styles["loading"]} id="app" />}>
+        <Suspense
+          fallback={<Layout.Main aria-busy="true" className={styles["loading"]} id="app" />}
+        >
           <EditorScreen
             account={model.account}
             api={model.api}

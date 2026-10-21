@@ -1,5 +1,19 @@
 import { useEffect, useState } from "react";
 
+import {
+  ArrowBackIcon,
+  DeleteIcon,
+  EditIcon,
+  RestoreFromTrashIcon,
+} from "@earendil-works/elanor-icons-react";
+import {
+  Button,
+  Container,
+  EmptyState,
+  Layout,
+  Page,
+  PageHeader,
+} from "@earendil-works/elanor-react";
 import { documentTrashExpiresAt } from "@earendil-works/inkling-core";
 import type { CatalogResponse, DocumentSummary } from "@earendil-works/inkling-protocol";
 
@@ -7,9 +21,7 @@ import type { ApiClientService, ApiError } from "./api.ts";
 import { useAppContext } from "./app-context.tsx";
 import { documentHref } from "./ui.ts";
 import { ButtonLink } from "./components/button-link.tsx";
-import { Button } from "./components/button.tsx";
 import { ConfirmationDialog } from "./components/confirmation-dialog.tsx";
-import emptyStateStyles from "./components/empty-state.module.css";
 import { useEffectAction } from "./effect-hooks.ts";
 import styles from "./trash-screen.module.css";
 import workspaceStyles from "./workspace.module.css";
@@ -45,112 +57,131 @@ export function TrashScreen({ api, initialCatalog }: TrashScreenProps): React.JS
 
   return (
     <>
-      <main
+      <Layout.Main
         className={workspaceStyles["layout"]}
         data-trash=""
         data-workspace-layout=""
         id="app"
         tabIndex={-1}
       >
-        <section
-          className={`${workspaceStyles["heading"]} ${styles["heading"]}`}
-          data-workspace-heading=""
-        >
-          <div>
-            <h1>Trash</h1>
-            <p>Documents are permanently deleted 30 days after they enter Trash.</p>
-          </div>
-          <ButtonLink href="/" variant="toolbar">
-            All documents
-          </ButtonLink>
-        </section>
-        {catalog.documents.length === 0 ? (
-          <section className={styles["emptyCatalog"]} data-trash-catalog="">
-            <div className={emptyStateStyles["root"]} data-empty-state="">
-              <span>Ø</span>
-              <h2>Trash is empty.</h2>
-              <p>Deleted documents will remain here for 30 days.</p>
-            </div>
-          </section>
-        ) : (
-          <section className={styles["catalog"]} data-trash-catalog="">
-            {catalog.documents.map((document) => {
-              const metadata = document.metadata;
-              const expiresAt = documentTrashExpiresAt(metadata);
-              return (
-                <article
-                  className={styles["row"]}
-                  data-trash-document={metadata.id}
-                  key={metadata.id}
-                >
-                  <div className={styles["identity"]}>
-                    <span className={styles["folio"]}>
-                      {metadata.rfcNumber === undefined
-                        ? "Note"
-                        : `RFC ${String(metadata.rfcNumber).padStart(4, "0")}`}
-                    </span>
-                    <div>
-                      <h2>
-                        <a href={documentHref(metadata.id, metadata.rfcNumber, false, "edit")}>
-                          {metadata.title}
-                        </a>
-                      </h2>
-                      <p>
-                        {metadata.deletedAt === undefined
-                          ? "Deletion date unavailable"
-                          : `Deleted ${formatDate(metadata.deletedAt)}`}
-                        {expiresAt === undefined
-                          ? ""
-                          : ` · Permanently deletes ${formatDate(expiresAt)}`}
-                      </p>
-                    </div>
-                  </div>
-                  <div className={styles["actions"]}>
-                    <ButtonLink
-                      data-edit-trashed-document={metadata.id}
-                      href={documentHref(metadata.id, metadata.rfcNumber, false, "edit")}
-                      variant="toolbar"
+        <Container>
+          <Page>
+            <PageHeader.Root data-workspace-heading="">
+              <PageHeader.Row>
+                <PageHeader.Title level={1}>Trash</PageHeader.Title>
+                <PageHeader.Actions>
+                  <ButtonLink hierarchy="tertiary" iconStart={<ArrowBackIcon />} href="/">
+                    All documents
+                  </ButtonLink>
+                </PageHeader.Actions>
+              </PageHeader.Row>
+              <PageHeader.Description className={workspaceStyles["description"]}>
+                Documents are permanently deleted 30 days after they enter Trash.
+              </PageHeader.Description>
+            </PageHeader.Root>
+            {catalog.documents.length === 0 ? (
+              <section className={styles["empty"]} data-trash-catalog="">
+                <EmptyState.Root data-empty-state="">
+                  <EmptyState.Illustration>
+                    <DeleteIcon aria-hidden="true" className={styles["illustration"]} />
+                  </EmptyState.Illustration>
+                  <EmptyState.Body>
+                    <EmptyState.Copy>
+                      <EmptyState.Title level={2}>Trash is empty.</EmptyState.Title>
+                      <EmptyState.Description>
+                        Deleted documents will remain here for 30 days.
+                      </EmptyState.Description>
+                    </EmptyState.Copy>
+                  </EmptyState.Body>
+                </EmptyState.Root>
+              </section>
+            ) : (
+              <section className={styles["catalog"]} data-trash-catalog="">
+                {catalog.documents.map((document) => {
+                  const metadata = document.metadata;
+                  const expiresAt = documentTrashExpiresAt(metadata);
+                  const busy = restoreDocument.state.pending || hardDeleteDocument.state.pending;
+                  return (
+                    <article
+                      className={styles["row"]}
+                      data-trash-document={metadata.id}
+                      key={metadata.id}
                     >
-                      Edit
-                    </ButtonLink>
-                    <Button
-                      data-restore-document={metadata.id}
-                      disabled={restoreDocument.state.pending || hardDeleteDocument.state.pending}
-                      onClick={() =>
-                        restoreDocument.execute(
-                          {
-                            documentId: metadata.id,
-                            expectedRevision: metadata.headRevision,
-                          },
-                          {
-                            onFailure: (error) => showToast(error.message, "error"),
-                            onSuccess: () => {
-                              removeFromList(metadata.id);
-                              showToast("Document restored.", "success");
-                            },
-                          },
-                        )
-                      }
-                      variant="toolbar"
-                    >
-                      Restore
-                    </Button>
-                    <Button
-                      className={styles["delete"]}
-                      data-hard-delete-document={metadata.id}
-                      disabled={restoreDocument.state.pending || hardDeleteDocument.state.pending}
-                      onClick={() => setPermanentCandidate(document)}
-                      variant="text"
-                    >
-                      Delete forever
-                    </Button>
-                  </div>
-                </article>
-              );
-            })}
-          </section>
-        )}
-      </main>
+                      <div className={styles["identity"]}>
+                        <span className={styles["folio"]}>
+                          {metadata.rfcNumber === undefined
+                            ? "Note"
+                            : `RFC ${String(metadata.rfcNumber).padStart(4, "0")}`}
+                        </span>
+                        <div className={styles["summary"]}>
+                          <h2>
+                            <a href={documentHref(metadata.id, metadata.rfcNumber, false, "edit")}>
+                              {metadata.title}
+                            </a>
+                          </h2>
+                          <p>
+                            {metadata.deletedAt === undefined
+                              ? "Deletion date unavailable"
+                              : `Deleted ${formatDate(metadata.deletedAt)}`}
+                            {expiresAt === undefined
+                              ? ""
+                              : ` · Permanently deletes ${formatDate(expiresAt)}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className={styles["actions"]}>
+                        <ButtonLink
+                          data-edit-trashed-document={metadata.id}
+                          density="compact"
+                          hierarchy="secondary"
+                          href={documentHref(metadata.id, metadata.rfcNumber, false, "edit")}
+                          iconStart={<EditIcon />}
+                        >
+                          Edit
+                        </ButtonLink>
+                        <Button
+                          data-restore-document={metadata.id}
+                          density="compact"
+                          disabled={busy}
+                          hierarchy="secondary"
+                          iconStart={<RestoreFromTrashIcon />}
+                          onClick={() =>
+                            restoreDocument.execute(
+                              {
+                                documentId: metadata.id,
+                                expectedRevision: metadata.headRevision,
+                              },
+                              {
+                                onFailure: (error) => showToast(error.message, "error"),
+                                onSuccess: () => {
+                                  removeFromList(metadata.id);
+                                  showToast("Document restored.", "success");
+                                },
+                              },
+                            )
+                          }
+                        >
+                          Restore
+                        </Button>
+                        <Button
+                          data-hard-delete-document={metadata.id}
+                          density="compact"
+                          disabled={busy}
+                          hierarchy="tertiary"
+                          onClick={() => setPermanentCandidate(document)}
+                          semantic="negative"
+                        >
+                          Delete forever
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            )}
+          </Page>
+        </Container>
+      </Layout.Main>
       <ConfirmationDialog
         confirmLabel="Delete forever"
         description={

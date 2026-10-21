@@ -1,3 +1,4 @@
+import { EditIcon } from "@earendil-works/elanor-icons-react";
 import type { DocumentMetadataDto } from "@earendil-works/inkling-protocol";
 
 import { documentHref } from "../ui.ts";
@@ -19,13 +20,11 @@ export function ReaderToolbar({
   if (!canEdit) return null;
 
   return (
-    <nav className={styles["toolbar"]} aria-label="Document navigation">
+    <nav aria-label="Document navigation" className={styles["toolbar"]}>
       <ButtonLink
-        className={styles["modeLink"]}
         data-open-editor=""
+        iconStart={<EditIcon />}
         href={documentHref(metadata.id, metadata.rfcNumber, shared, "edit")}
-        size="small"
-        variant="primary"
       >
         Edit
       </ButtonLink>

@@ -10,11 +10,15 @@ Inkling supports two runtimes:
 - Node.js 24 or newer
 - pnpm 10 or newer
 
-Install dependencies with:
+The frontend uses the [Elanor](vendor/elanor/README.md) design system from the `vendor/elanor-src`
+submodule, which needs access to the Elanor repository. Clone the submodule, build Elanor, and install
+dependencies with:
 
 ```sh
-pnpm install
+make setup
 ```
+
+`make dev`, `make build`, and `make check` rebuild Elanor when the submodule moves.
 
 ## Standalone Cloudflare deployment
 
@@ -98,12 +102,12 @@ Inkling uses a server-side authorization-code flow with PKCE, so no Authorized J
 
 ### Theme configuration
 
-Inkling ships with two complete themes: [`inkling`](themes/inkling.json), the default editorial palette, and [`paper`](themes/paper.json), a warmer paper-colored palette with its own fonts. Every color—including editor syntax, status chips, presence colors, overlays, and Mermaid diagrams—is expressed in OKLCH. [`theme.schema.json`](theme.schema.json) documents the format.
+By default, Inkling uses the `earendil` brand of the [Elanor](vendor/elanor/README.md) design system: its fonts, colors, and component styles. A deployment theme overrides Elanor's semantic tokens and Inkling's own tokens for editor syntax, status chips, presence colors, and Mermaid diagrams. Inkling ships with two complete themes: [`inkling`](themes/inkling.json), the original editorial palette, and [`paper`](themes/paper.json), a warmer paper-colored palette with its own fonts. Every color is expressed in OKLCH. [`theme.schema.json`](theme.schema.json) documents the format.
 
 Select a theme with `INKLING_THEME`:
 
-- Leave it unset or set it to `default` or `inkling` to use the default theme.
-- Set it to `paper` to use the bundled paper theme.
+- Leave it unset or set it to `default` or `elanor` to use Elanor's theme without overrides.
+- Set it to `inkling` or `paper` to use a bundled theme.
 - In the Node.js runtime, a value other than a bundled name can be a JSON file path. Relative paths are resolved from the process working directory. Inline JSON is also accepted.
 - In the Cloudflare runtime, custom themes must be supplied as complete inline JSON because Workers cannot read deployment-local files.
 
@@ -164,7 +168,8 @@ node packages/cli/src/main.ts serve --port 8787 --data-dir .inkling
 
 ### Docker
 
-The Docker image runs the same local runtime. Mount the complete `/data` directory for persistence:
+The Docker image runs the same local runtime. It copies the Elanor build from the checkout, so run
+`make setup` first. Mount the complete `/data` directory for persistence:
 
 ```sh
 docker build -t inkling .

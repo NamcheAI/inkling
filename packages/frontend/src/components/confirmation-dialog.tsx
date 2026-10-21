@@ -1,9 +1,8 @@
-import { useId } from "react";
 import type { ReactNode } from "react";
 
-import { Button } from "./button.tsx";
-import styles from "./confirmation-dialog.module.css";
-import { ModalDialog } from "./modal-dialog.tsx";
+import { Button, Modal } from "@earendil-works/elanor-react";
+
+import { Dialog } from "./dialog.tsx";
 
 export interface ConfirmationDialogProps {
   readonly confirmLabel: string;
@@ -26,46 +25,28 @@ export function ConfirmationDialog({
   title,
   tone = "default",
 }: ConfirmationDialogProps): React.JSX.Element {
-  const titleId = useId();
-  const descriptionId = useId();
-
   return (
-    <ModalDialog
-      aria-describedby={descriptionId}
-      aria-labelledby={titleId}
-      className={styles["dialog"]}
-      data-confirmation-dialog=""
-      onDismiss={onCancel}
+    <Dialog
+      attributes={{ "data-confirmation-dialog": "" }}
+      closeLabel="Cancel"
+      description={description}
+      onClose={onCancel}
       open={open}
-      preventDismiss={pending}
+      pending={pending}
+      title={title}
     >
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          onConfirm();
-        }}
-      >
-        <div>
-          <p className={styles["eyebrow"]}>Please confirm</p>
-          <h2 id={titleId}>{title}</h2>
-        </div>
-        <p className={styles["note"]} id={descriptionId}>
-          {description}
-        </p>
-        <div className={styles["actions"]}>
-          <Button disabled={pending} onClick={onCancel} variant="toolbar">
-            Cancel
-          </Button>
-          <Button
-            className={tone === "danger" ? styles["danger"] : undefined}
-            disabled={pending}
-            type="submit"
-            variant="primary"
-          >
-            {pending ? "Working…" : confirmLabel}
-          </Button>
-        </div>
-      </form>
-    </ModalDialog>
+      <Modal.Actions>
+        <Button
+          onClick={onConfirm}
+          pending={pending}
+          semantic={tone === "danger" ? "negative" : "neutral"}
+        >
+          {confirmLabel}
+        </Button>
+        <Button disabled={pending} hierarchy="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+      </Modal.Actions>
+    </Dialog>
   );
 }

@@ -464,10 +464,8 @@ test(
         const themeStylesheet = await fetch(`${baseUrl}/theme.css`);
         assert.equal(themeStylesheet.status, 200);
         const themeStyles = await themeStylesheet.text();
-        assert.match(themeStyles, /family=JetBrains\+Mono/u);
-        assert.match(themeStyles, /family=Newsreader/u);
-        assert.match(themeStyles, /--code-keyword: oklch\(/u);
-        assert.match(themeStyles, /:root\[data-theme="dark"\]/u);
+        assert.match(themeStyles, /default Elanor theme/u);
+        assert.doesNotMatch(themeStyles, /:root/u);
         const publicStylesheet = await fetch(`${baseUrl}/public.css`);
         assert.equal(publicStylesheet.status, 200);
         const publicStyles = await publicStylesheet.text();

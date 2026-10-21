@@ -56,7 +56,7 @@ import {
 import { handleMcpRequest, mcpEndpointPath } from "./mcp/server.ts";
 import type { GoogleAuthenticationEnvironment } from "./google-auth.ts";
 import { canonicalRfcPath, rfcRedirectLocation } from "./routes.ts";
-import { defaultTheme, themeCssResponse } from "./theme.ts";
+import { publicStylesheetLinks, themeCssResponse } from "./theme.ts";
 import type { ThemeConfiguration } from "./theme.ts";
 
 export type {
@@ -97,9 +97,9 @@ export type { GoogleAuthenticationEnvironment, GoogleIdentityLogin } from "./goo
 export {
   bundledThemes,
   decodeThemeJson,
-  defaultTheme,
   findBundledTheme,
   inklingTheme,
+  isDefaultThemeSelection,
   paperTheme,
   ThemeConfigurationSchema,
   ThemeError,
@@ -208,11 +208,11 @@ export function createBackendApp(options: BackendOptions = {}): Hono {
     withService(context, options, (service) => exchangeToken(context.req.raw, service)),
   );
 
-  app.get("/theme.css", () => themeCssResponse(options.theme ?? defaultTheme));
+  app.get("/theme.css", () => themeCssResponse(options.theme));
 
   app.get("/theme.json", (context) => {
     context.header("Cache-Control", "public, max-age=300");
-    return context.json(options.theme ?? defaultTheme);
+    return context.json(options.theme ?? null);
   });
 
   app.get("/api/health", (context) => {
@@ -1314,7 +1314,7 @@ function publicCatalogHtml(titleValue: string, catalog: CatalogResponse): string
       return `<li data-document-visibility="${metadata.visibility}"><span class="catalog-folio">${folio}</span><div class="catalog-entry"><a class="title" href="${href}">${escapeHtml(metadata.title)}</a><p>${escapeHtml(excerpt)}</p><small>${visibility}${state}<time datetime="${escapeHtml(metadata.updatedAt)}">${escapeHtml(metadata.updatedAt.slice(0, 10))}</time>${labels}</small></div></li>`;
     })
     .join("");
-  return `<!doctype html>${agentHandoffPreamble}<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Published notes and RFCs"><link rel="help" href="/AGENTS.md" type="text/markdown"><title>Inkling</title><link rel="stylesheet" href="/theme.css"><link rel="stylesheet" href="/public.css"></head><body><header class="public-masthead"><a href="/">INKLING</a><span>PUBLISHED</span></header><main class="public-catalog-shell"><article class="public-paper public-catalog-paper"><h1>${title}</h1><ol class="catalog">${rows || "<li>No published notes or RFCs.</li>"}</ol></article></main></body></html>`;
+  return `<!doctype html>${agentHandoffPreamble}<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Published notes and RFCs"><link rel="help" href="/AGENTS.md" type="text/markdown"><title>Inkling</title>${publicStylesheetLinks}</head><body><header class="public-masthead"><a href="/">INKLING</a><span>PUBLISHED</span></header><main class="public-catalog-shell"><article class="public-paper public-catalog-paper"><h1>${title}</h1><ol class="catalog">${rows || "<li>No published notes or RFCs.</li>"}</ol></article></main></body></html>`;
 }
 
 function publicDocumentHtml(document: {
@@ -1350,7 +1350,7 @@ function publicDocumentHtml(document: {
       : `<aside class="public-toc" aria-label="On this page"><p>On this page</p><ol>${toc}</ol></aside>`;
   const state = publicStateLink(metadata.lifecycleState);
   const visibility = publicVisibilityChip(metadata);
-  return `<!doctype html>${agentHandoffPreamble}<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="${description}"><meta property="og:title" content="${title}"><meta property="og:description" content="${description}"><link rel="help" href="/AGENTS.md" type="text/markdown"><link rel="canonical" href="${escapeHtml(document.canonicalPath)}"><title>${title}</title><link rel="stylesheet" href="/theme.css"><link rel="stylesheet" href="/public.css"></head><body><header class="public-masthead"><a href="/">INKLING</a><span>${folio}</span></header><main class="public-page-shell"><article class="public-paper public-document"><header class="public-hero"><p class="public-folio">${folio}</p><div class="public-hero-main"><div class="public-hero-badges">${state}${visibility}</div><h1>${title}</h1>${labels === "" ? "" : `<div class="public-labels" aria-label="Labels">${labels}</div>`}</div></header>${publicMetadataHtml(metadata)}<div class="public-content-grid"><div class="public-prose">${document.html}</div>${tocHtml}</div></article></main></body></html>`;
+  return `<!doctype html>${agentHandoffPreamble}<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="${description}"><meta property="og:title" content="${title}"><meta property="og:description" content="${description}"><link rel="help" href="/AGENTS.md" type="text/markdown"><link rel="canonical" href="${escapeHtml(document.canonicalPath)}"><title>${title}</title>${publicStylesheetLinks}</head><body><header class="public-masthead"><a href="/">INKLING</a><span>${folio}</span></header><main class="public-page-shell"><article class="public-paper public-document"><header class="public-hero"><p class="public-folio">${folio}</p><div class="public-hero-main"><div class="public-hero-badges">${state}${visibility}</div><h1>${title}</h1>${labels === "" ? "" : `<div class="public-labels" aria-label="Labels">${labels}</div>`}</div></header>${publicMetadataHtml(metadata)}<div class="public-content-grid"><div class="public-prose">${document.html}</div>${tocHtml}</div></article></main></body></html>`;
 }
 
 function publicVisibilityChip(metadata: DocumentMetadataDto): string {

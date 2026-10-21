@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { Container, Layout, Page, PageHeader } from "@earendil-works/elanor-react";
 import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService } from "./api.ts";
@@ -26,30 +27,40 @@ export function WorkspaceScreen({
   useEffect(() => setCatalog(initialCatalog), [initialCatalog]);
 
   return (
-    <main
+    <Layout.Main
       className={styles["layout"]}
       data-public-catalog={publicCatalog ? "" : undefined}
       data-workspace-layout=""
       id="app"
       tabIndex={-1}
     >
-      <section className={styles["heading"]} data-workspace-heading="">
-        <div>
-          {publicCatalog ? (
-            <p className={styles["eyebrow"]}>Public archive / published revisions</p>
-          ) : null}
-          <h1>Inkling</h1>
-        </div>
-        {publicCatalog ? null : <NewDocumentControl api={api} />}
-      </section>
-      <CatalogControls
-        api={api}
-        initialCatalog={initialCatalog}
-        onResultsChange={setCatalog}
-        publicCatalog={publicCatalog}
-        showTrash={showTrash}
-      />
-      <DocumentCatalog catalog={catalog} publicCatalog={publicCatalog} />
-    </main>
+      <Container>
+        <Page>
+          <PageHeader.Root data-workspace-heading="">
+            <PageHeader.Row>
+              <PageHeader.Title level={1}>Inkling</PageHeader.Title>
+              {publicCatalog ? null : (
+                <PageHeader.Actions>
+                  <NewDocumentControl api={api} />
+                </PageHeader.Actions>
+              )}
+            </PageHeader.Row>
+            {publicCatalog ? (
+              <PageHeader.Description className={styles["description"]}>
+                Public archive / published revisions
+              </PageHeader.Description>
+            ) : null}
+          </PageHeader.Root>
+          <CatalogControls
+            api={api}
+            initialCatalog={initialCatalog}
+            onResultsChange={setCatalog}
+            publicCatalog={publicCatalog}
+            showTrash={showTrash}
+          />
+          <DocumentCatalog catalog={catalog} publicCatalog={publicCatalog} />
+        </Page>
+      </Container>
+    </Layout.Main>
   );
 }

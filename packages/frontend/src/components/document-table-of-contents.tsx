@@ -1,61 +1,119 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
+import { TableOfContents } from "@earendil-works/elanor-react";
 import type { RenderHeading } from "@earendil-works/inkling-renderer";
 
 import styles from "./reader.module.css";
 
 export interface DocumentTableOfContentsProps {
   readonly headings: readonly RenderHeading[];
+  /** `list` sits beside the document; `menu` collapses into a sticky bar above it. */
+  readonly presentation: "list" | "menu";
+}
+
+interface HeadingNode {
+  readonly children: HeadingNode[];
+  readonly heading: RenderHeading;
 }
 
 export function DocumentTableOfContents({
   headings,
+  presentation,
 }: DocumentTableOfContentsProps): React.JSX.Element | null {
   const tableOfContentsRef = useRef<HTMLElement>(null);
   const [activeHeadingId, setActiveHeadingId] = useState<string>();
-  useActiveHeading(headings, tableOfContentsRef, setActiveHeadingId);
+  useActiveHeading(headings, tableOfContentsRef, setActiveHeadingId, presentation);
 
   if (headings.length === 0) return null;
-  const minimumDepth = Math.min(...headings.map((heading) => heading.depth));
-  const currentHeadingId = headings.some((heading) => heading.id === activeHeadingId)
-    ? activeHeadingId
-    : headings[0]?.id;
+  const currentHeading = headings.find((heading) => heading.id === activeHeadingId) ?? headings[0];
+  const list = <HeadingList currentId={currentHeading?.id} nodes={headingTree(headings)} />;
+
+  if (presentation === "menu") {
+    return (
+      <TableOfContents.Menu
+        className={styles["tocMenu"]}
+        data-reader-toc=""
+        ref={tableOfContentsRef as React.Ref<HTMLDivElement>}
+      >
+        <TableOfContents.MenuTrigger label="On this page">
+          {currentHeading?.text}
+        </TableOfContents.MenuTrigger>
+        <TableOfContents.MenuPopup label="On this page">{list}</TableOfContents.MenuPopup>
+      </TableOfContents.Menu>
+    );
+  }
 
   return (
-    <nav
+    <TableOfContents.Root
       aria-label="On this page"
       className={styles["toc"]}
       data-reader-toc=""
       ref={tableOfContentsRef}
     >
-      <p>On this page</p>
-      <ol>
-        {headings.map((heading) => {
-          const level = Math.min(3, heading.depth - minimumDepth + 1);
-          const current = heading.id === currentHeadingId;
-          return (
-            <li
-              className={
-                level === 2 ? styles["tocLevel2"] : level === 3 ? styles["tocLevel3"] : undefined
-              }
-              data-current-heading={current ? "" : undefined}
-              key={heading.id}
-            >
-              <a aria-current={current ? "location" : undefined} href={`#${heading.id}`}>
-                {heading.text}
-              </a>
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
+      <p className={styles["tocTitle"]}>On this page</p>
+      {list}
+      <TableOfContents.Indicator />
+    </TableOfContents.Root>
   );
+}
+
+function HeadingList({
+  currentId,
+  nodes,
+}: {
+  readonly currentId: string | undefined;
+  readonly nodes: readonly HeadingNode[];
+}): ReactNode {
+  return (
+    <TableOfContents.List>
+      {nodes.map(({ children, heading }) => (
+        <TableOfContents.Item key={heading.id}>
+          <TableOfContents.Link active={heading.id === currentId} href={`#${heading.id}`}>
+            {heading.text}
+          </TableOfContents.Link>
+          {children.length === 0 ? null : <HeadingList currentId={currentId} nodes={children} />}
+        </TableOfContents.Item>
+      ))}
+    </TableOfContents.List>
+  );
+}
+
+/** Nests headings by depth, at most three levels deep, relative to the shallowest heading. */
+function headingTree(headings: readonly RenderHeading[]): readonly HeadingNode[] {
+  const minimumDepth = Math.min(...headings.map((heading) => heading.depth));
+  const roots: HeadingNode[] = [];
+  const ancestors: { readonly level: number; readonly node: HeadingNode }[] = [];
+  for (const heading of headings) {
+    const level = Math.min(3, heading.depth - minimumDepth + 1);
+    const node: HeadingNode = { children: [], heading };
+    while ((ancestors.at(-1)?.level ?? 0) >= level) ancestors.pop();
+    const parent = ancestors.at(-1);
+    if (parent === undefined) roots.push(node);
+    else parent.node.children.push(node);
+    ancestors.push({ level, node });
+  }
+  return roots;
+}
+
+/** Whether a media query matches, following changes. */
+export function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => matchMedia(query).matches);
+  useEffect(() => {
+    const media = matchMedia(query);
+    const update = (): void => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+  return matches;
 }
 
 function useActiveHeading(
   headings: readonly RenderHeading[],
   tableOfContentsRef: React.RefObject<HTMLElement | null>,
   setActiveHeadingId: React.Dispatch<React.SetStateAction<string | undefined>>,
+  presentation: DocumentTableOfContentsProps["presentation"],
 ): void {
   useEffect(() => {
     const tableOfContents = tableOfContentsRef.current;
@@ -132,5 +190,5 @@ function useActiveHeading(
       mutationObserver.disconnect();
       resizeObserver.disconnect();
     };
-  }, [headings, setActiveHeadingId, tableOfContentsRef]);
+  }, [headings, presentation, setActiveHeadingId, tableOfContentsRef]);
 }

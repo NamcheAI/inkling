@@ -523,17 +523,34 @@ export const paperTheme: ThemeConfiguration = {
   },
 };
 
-export const defaultTheme = inklingTheme;
+/**
+ * Stylesheets of the server-rendered pages: Elanor's fonts and `earendil` tokens (emitted by the frontend build), the
+ * deployment theme, which overrides the tokens, and the public page styles.
+ */
+export const publicStylesheetLinks = [
+  "/fonts/elanor/earendil.css",
+  "/fonts/elanor/commit-mono.css",
+  "/tokens.css",
+  "/theme.css",
+  "/public.css",
+]
+  .map((href) => `<link rel="stylesheet" href="${href}">`)
+  .join("");
 
 export const bundledThemes = {
   inkling: inklingTheme,
   paper: paperTheme,
 } as const satisfies Readonly<Record<string, ThemeConfiguration>>;
 
+/** Selections that keep Elanor's own palette and fonts, without a deployment theme. */
+export function isDefaultThemeSelection(selection: string | undefined): boolean {
+  const name = selection?.trim().toLowerCase();
+  return name === undefined || name === "" || name === "default" || name === "elanor";
+}
+
 export function findBundledTheme(selection: string | undefined): ThemeConfiguration | undefined {
   const name = selection?.trim().toLowerCase();
-  if (name === undefined || name === "" || name === "default") return inklingTheme;
-  return bundledThemes[name as keyof typeof bundledThemes];
+  return name === undefined ? undefined : bundledThemes[name as keyof typeof bundledThemes];
 }
 
 export function decodeThemeJson(source: string): Effect.Effect<ThemeConfiguration, ThemeError> {
@@ -552,20 +569,26 @@ export function decodeThemeJson(source: string): Effect.Effect<ThemeConfiguratio
   );
 }
 
-export function themeStylesheet(theme: ThemeConfiguration): string {
+/**
+ * Renders a deployment theme as overrides of Elanor's semantic tokens and
+ * Inkling's domain tokens. Without a theme, the application uses Elanor's
+ * `earendil` brand tokens unchanged.
+ */
+export function themeStylesheet(theme: ThemeConfiguration | undefined): string {
+  if (theme === undefined) return "/* Inkling uses the default Elanor theme. */\n";
   const imports = theme.fonts.imports.map((url) => `@import url("${url}");`).join("\n");
   const fonts = [
-    `  --serif: ${theme.fonts.prose};`,
-    `  --heading: ${theme.fonts.heading};`,
-    `  --sans: ${theme.fonts.ui};`,
-    `  --mono: ${theme.fonts.code};`,
+    `  --semantic-font-family-prose: ${theme.fonts.prose};`,
+    `  --semantic-font-family-ui: ${theme.fonts.ui};`,
+    `  --semantic-font-family-code: ${theme.fonts.code};`,
+    `  --heading-font: ${theme.fonts.heading};`,
   ].join("\n");
   const light = modeVariables(theme.light);
   const dark = modeVariables(theme.dark);
-  return `${imports}${imports === "" ? "" : "\n\n"}:root {\n  color-scheme: light;\n${fonts}\n${light}\n}\n\n:root[data-theme="dark"] {\n  color-scheme: dark;\n${dark}\n}\n\n@media (prefers-color-scheme: dark) {\n  :root:not([data-theme]) {\n    color-scheme: dark;\n${dark}\n  }\n}\n`;
+  return `${imports}${imports === "" ? "" : "\n\n"}:root {\n  color-scheme: light;\n${fonts}\n${light}\n}\n\n:root[data-color-scheme="dark"] {\n  color-scheme: dark;\n${dark}\n}\n\n@media (prefers-color-scheme: dark) {\n  :root:not([data-color-scheme]) {\n    color-scheme: dark;\n${dark}\n  }\n}\n`;
 }
 
-export function themeCssResponse(theme: ThemeConfiguration): Response {
+export function themeCssResponse(theme: ThemeConfiguration | undefined): Response {
   return new Response(themeStylesheet(theme), {
     headers: {
       "Cache-Control": "public, max-age=300",
@@ -576,27 +599,49 @@ export function themeCssResponse(theme: ThemeConfiguration): Response {
 }
 
 function modeVariables(mode: ThemeMode): string {
+  const hover = (color: string): string => `color-mix(in oklch, ${color} 90%, ${mode.text})`;
+  const active = (color: string): string => `color-mix(in oklch, ${color} 80%, ${mode.text})`;
   const values: Readonly<Record<string, string | number>> = {
-    "--page": mode.page,
-    "--surface": mode.surface,
-    "--surface-muted": mode.surfaceMuted,
+    // Elanor's semantic tokens.
+    "--semantic-color-background-canvas": mode.page,
+    "--semantic-color-background-surface": mode.surface,
+    "--semantic-color-background-backdrop": mode.scrim,
+    "--semantic-color-background-skeleton": mode.surfaceMuted,
+    "--semantic-color-background-fill-primary": mode.accent,
+    "--semantic-color-background-fill-primary-hover": hover(mode.accent),
+    "--semantic-color-background-fill-primary-active": active(mode.accent),
+    "--semantic-color-background-fill-primary-negative": mode.danger,
+    "--semantic-color-background-fill-primary-negative-hover": hover(mode.danger),
+    "--semantic-color-background-fill-primary-negative-active": active(mode.danger),
+    "--semantic-color-background-fill-secondary": mode.surfaceMuted,
+    "--semantic-color-background-fill-secondary-hover": hover(mode.surfaceMuted),
+    "--semantic-color-background-fill-secondary-active": active(mode.surfaceMuted),
+    "--semantic-color-background-fill-ghost-hover": mode.accentSoft,
+    "--semantic-color-background-fill-ghost-active": hover(mode.accentSoft),
+    "--semantic-color-background-fill-ghost-neutral-hover": mode.accentSoft,
+    "--semantic-color-background-fill-ghost-neutral-active": hover(mode.accentSoft),
+    "--semantic-color-background-fill-selected": mode.accent,
+    "--semantic-color-background-fill-selected-hover": hover(mode.accent),
+    "--semantic-color-background-fill-selected-active": active(mode.accent),
+    "--semantic-color-border-primary": mode.borderStrong,
+    "--semantic-color-border-secondary": mode.border,
+    "--semantic-color-border-negative": mode.danger,
+    "--semantic-color-focus-ring": mode.focusRing,
+    "--semantic-color-text-primary": mode.text,
+    "--semantic-color-text-secondary": mode.muted,
+    "--semantic-color-text-link": mode.accent,
+    "--semantic-color-text-information": mode.accent,
+    "--semantic-color-border-information": mode.accent,
+    "--semantic-color-background-fill-primary-information": mode.accent,
+    "--semantic-color-background-fill-secondary-information": mode.accentSoft,
+    "--semantic-color-text-negative": mode.danger,
+    "--semantic-color-text-on-primary-fill": mode.accentContrast,
+    "--semantic-color-text-on-secondary-fill": mode.text,
+    "--semantic-color-text-code": mode.syntax.text,
+    "--semantic-color-icon-on-selected-fill": mode.accentContrast,
+    // Inkling's domain tokens.
     "--editor-background": mode.editorBackground,
     "--editor-active-line-background": mode.editorActiveLine,
-    "--text": mode.text,
-    "--transparent": mode.transparent,
-    "--muted": mode.muted,
-    "--border": mode.border,
-    "--border-strong": mode.borderStrong,
-    "--accent": mode.accent,
-    "--accent-contrast": mode.accentContrast,
-    "--accent-soft": mode.accentSoft,
-    "--focus-ring": mode.focusRing,
-    "--danger": mode.danger,
-    "--shadow-color": mode.shadow,
-    "--shadow-soft": mode.shadowSoft,
-    "--shadow-strong": mode.shadowStrong,
-    "--scrim": mode.scrim,
-    "--scrim-soft": mode.scrimSoft,
     "--participant-text": mode.participantText,
     "--presence-lightness": mode.presence.lightness,
     "--presence-chroma": mode.presence.chroma,
@@ -651,13 +696,6 @@ function modeVariables(mode: ThemeMode): string {
     "--mermaid-tertiary": mode.mermaid.tertiary,
     "--mermaid-note": mode.mermaid.note,
     "--mermaid-note-text": mode.mermaid.noteText,
-    "--public-page": mode.publicPage,
-    "--public-paper": mode.surface,
-    "--public-muted-surface": mode.surfaceMuted,
-    "--public-text": mode.text,
-    "--public-muted": mode.muted,
-    "--public-border": mode.border,
-    "--public-border-strong": mode.borderStrong,
   };
   return Object.entries(values)
     .map(([name, value]) => `  ${name}: ${value};`)

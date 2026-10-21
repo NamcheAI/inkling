@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Effect } from "effect";
 
+import { Layout } from "@earendil-works/elanor-react";
 import type { AuthenticationStatus, DocumentResponse } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService, ApiError } from "./api.ts";
@@ -41,6 +42,7 @@ export function EditorScreen({
 }: EditorScreenProps): React.JSX.Element {
   const { navigate, setHeaderDocument, setParticipants, setStatus, showToast } = useAppContext();
   const previewRef = useRef<HTMLElement>(null);
+  const commentsButtonRef = useRef<HTMLButtonElement>(null);
   const editorCommentsRef = useRef<EditorCommentsHandle>(null);
   const [metadata, setMetadata] = useState(initial.metadata);
   const [comments, setComments] = useState(initial.comments);
@@ -150,7 +152,7 @@ export function EditorScreen({
     .join(" ");
 
   return (
-    <main
+    <Layout.Main
       className={layoutClass}
       data-preview-open={previewOpen ? "" : undefined}
       id="app"
@@ -164,6 +166,7 @@ export function EditorScreen({
         canDelete={canDelete}
         canEdit={canEdit}
         canEditMetadata={canEditMetadata}
+        commentsButtonRef={commentsButtonRef}
         metadata={metadata}
         onAttachment={(attachment) => {
           const session = sessionRef.current;
@@ -227,7 +230,6 @@ export function EditorScreen({
         }
         previewRef={previewRef}
         metadata={displayedPreviewMetadata}
-        readOnly={!canEdit}
       />
       {displayName === undefined ? null : (
         <EditorComments
@@ -236,6 +238,7 @@ export function EditorScreen({
           canComment={canComment}
           canManage={permissions?.includes("manage-comments") ?? false}
           comments={comments}
+          controlsAnchorRef={commentsButtonRef}
           documentId={metadata.id}
           onCommentsChange={setComments}
           previewRef={previewRef}
@@ -280,6 +283,6 @@ export function EditorScreen({
           open
         />
       ) : null}
-    </main>
+    </Layout.Main>
   );
 }

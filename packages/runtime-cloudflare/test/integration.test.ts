@@ -40,8 +40,10 @@ test(
       const themeStylesheet = await fetch(`${running.baseUrl}/theme.css`);
       assert.equal(themeStylesheet.status, 200);
       const themeCss = await themeStylesheet.text();
-      assert.ok(themeCss.includes(`--accent: ${paperTheme.light.accent};`));
-      assert.match(themeCss, /--serif: "Literata"/u);
+      assert.ok(
+        themeCss.includes(`--semantic-color-background-fill-primary: ${paperTheme.light.accent};`),
+      );
+      assert.match(themeCss, /--semantic-font-family-prose: "Literata"/u);
       const themeConfiguration = await fetch(`${running.baseUrl}/theme.json`);
       assert.equal(themeConfiguration.status, 200);
       assert.equal(((await themeConfiguration.json()) as { name: string }).name, "paper");

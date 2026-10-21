@@ -1,5 +1,7 @@
 import { Effect } from "effect";
 
+import { PublishIcon } from "@earendil-works/elanor-icons-react";
+import { Button } from "@earendil-works/elanor-react";
 import { hasPendingPublicationChanges } from "@earendil-works/inkling-core";
 import type { DocumentMetadataDto } from "@earendil-works/inkling-protocol";
 
@@ -7,7 +9,6 @@ import type { ApiClientService, ApiError } from "../api.ts";
 import type { CollaborationClientError } from "../collaboration.ts";
 import { useAppContext } from "../app-context.tsx";
 import { useEffectAction } from "../effect-hooks.ts";
-import { Button } from "./button.tsx";
 
 export interface PublishButtonProps {
   readonly api: ApiClientService;
@@ -38,10 +39,10 @@ export function PublishButton({
 
   return (
     <Button
-      size="small"
-      variant="primary"
       data-publish=""
-      disabled={disabled || publish.state.pending}
+      disabled={disabled}
+      iconStart={<PublishIcon />}
+      pending={publish.state.pending}
       onClick={() =>
         publish.execute(undefined, {
           onFailure: (error) => showToast(error.message, "error"),

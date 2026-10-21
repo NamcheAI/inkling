@@ -1,66 +1,61 @@
 .masthead {
   position: relative;
-  z-index: 30;
-  display: flex;
-  height: var(--masthead-height);
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--page-padding);
-  border-bottom: 1px solid var(--border);
-  background: var(--page);
+  z-index: var(--semantic-number-layer-sticky);
+  flex-wrap: nowrap;
+  padding-inline: var(--page-padding);
+  border-block-end: var(--semantic-dimension-border-width-small) solid
+    var(--semantic-color-border-secondary);
+  background: var(--semantic-color-background-canvas);
 }
 
+/* Navigation progress: a bar along the bottom border while the next route loads. */
 .masthead::after {
   position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  background: var(--accent);
+  inset-inline: 0;
+  inset-block-end: calc(-1 * var(--semantic-dimension-border-width-small));
+  block-size: var(--semantic-dimension-border-width-medium);
+  background: var(--semantic-color-background-fill-selected);
   content: "";
-  opacity: 0;
+  opacity: var(--semantic-number-opacity-hidden);
   transform: scaleX(0.08);
   transform-origin: left;
 }
 
 :global(:root[data-navigating]) .masthead::after {
-  opacity: 1;
+  opacity: var(--semantic-number-opacity-visible);
   transform: scaleX(0.86);
   transition:
-    opacity 60ms ease,
+    opacity var(--semantic-transition-fade),
     transform 180ms ease-out;
 }
 
 :global(:root[data-navigation-complete]) .masthead::after {
-  opacity: 0;
+  opacity: var(--semantic-number-opacity-hidden);
   transform: scaleX(1);
   transition:
-    opacity 80ms ease 90ms,
+    opacity var(--semantic-transition-fade) 90ms,
     transform 70ms ease-out;
 }
 
-.right,
-.apiState,
-.participants {
-  display: flex;
-  align-items: center;
+.identity {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
-.right {
+.actions {
   flex: none;
-  gap: 0.9rem;
+  flex-wrap: nowrap;
 }
 
 .breadcrumbs {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
+  min-inline-size: 0;
 }
 
 .breadcrumbs ol,
 .breadcrumbs li {
   display: flex;
-  min-width: 0;
+  min-inline-size: 0;
   align-items: center;
 }
 
@@ -79,98 +74,113 @@
 }
 
 .separator {
-  margin: 0 0.55rem;
-  color: var(--muted);
-  font: 500 var(--font-caption) / 1 var(--mono);
+  margin-inline: var(--semantic-dimension-space-gap-small);
+  color: var(--semantic-color-text-secondary);
 }
 
 .wordmark,
-.breadcrumbLabel {
+.crumb {
   display: block;
   overflow: hidden;
-  color: var(--text);
-  font: 650 var(--font-small) / 1 var(--mono);
+  border-radius: var(--semantic-dimension-radius-small);
+  color: var(--semantic-color-text-primary);
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .wordmark {
-  font-weight: 800;
-  letter-spacing: 0.09em;
+  font: var(--semantic-typography-heading-app-6);
 }
 
-.breadcrumbLabel {
-  letter-spacing: -0.01em;
+.crumb {
+  color: var(--semantic-color-text-secondary);
+  font: var(--semantic-typography-ui-primary);
 }
 
-a.breadcrumbLabel:hover {
-  color: var(--accent);
+.crumb[aria-current="page"] {
+  color: var(--semantic-color-text-primary);
 }
 
-.apiState {
-  gap: 0.45rem;
-  color: var(--muted);
-  font: var(--font-caption) / 1 var(--mono);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+a.crumb:hover {
+  color: var(--semantic-color-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
-.apiLight {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--danger);
+.wordmark:focus-visible,
+.crumb:focus-visible {
+  outline: var(--semantic-dimension-border-width-medium) solid var(--semantic-color-focus-ring);
+  outline-offset: var(--semantic-dimension-border-width-medium);
 }
 
-:global(:root[data-api="ready"]) .apiLight {
-  background: var(--accent);
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--semantic-dimension-space-gap-small);
+  color: var(--semantic-color-text-secondary);
+  font: var(--semantic-typography-ui-secondary);
+  white-space: nowrap;
 }
 
-:global(:root[data-api="saving"]) .apiLight,
-:global(:root[data-api="connecting"]) .apiLight {
-  animation: pulse 0.9s infinite alternate;
+.statusLight {
+  inline-size: var(--semantic-dimension-size-xx-small);
+  block-size: var(--semantic-dimension-size-xx-small);
+  border-radius: var(--semantic-dimension-radius-full);
+  background: var(--semantic-color-icon-negative);
 }
 
-.themeToggle svg {
-  display: block;
-  width: 1rem;
-  height: 1rem;
+:global(:root[data-api="ready"]) .statusLight {
+  background: var(--semantic-color-icon-positive);
 }
 
-.signIn {
-  flex: none;
-  text-decoration: none;
+:global(:root[data-api="saving"]) .statusLight,
+:global(:root[data-api="connecting"]) .statusLight {
+  background: var(--semantic-color-icon-warning);
+  animation: pulse var(--semantic-transition-pulse-duration) infinite alternate;
 }
 
 .participants {
-  gap: 0.25rem;
+  display: flex;
+  align-items: center;
 }
 
 .participant {
   display: grid;
-  width: 1.55rem;
-  height: 1.55rem;
+  inline-size: var(--semantic-dimension-size-small);
+  block-size: var(--semantic-dimension-size-small);
   place-items: center;
-  border: 2px solid var(--surface);
-  border-radius: 50%;
+  margin-inline-start: calc(-1 * var(--semantic-dimension-space-gap-x-small));
+  border: var(--semantic-dimension-border-width-medium) solid
+    var(--semantic-color-background-canvas);
+  border-radius: var(--semantic-dimension-radius-full);
   background: var(--participant);
   color: var(--participant-text);
-  font: var(--font-caption) var(--mono);
+  font: var(--semantic-typography-ui-tertiary);
+}
+
+.account {
+  max-inline-size: min(18rem, 30vw);
+}
+
+.accountName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @keyframes pulse {
   to {
-    opacity: 0.25;
+    opacity: var(--semantic-number-opacity-pulse);
   }
 }
 
 @media (width <= 34rem) {
-  .apiState span:last-child {
+  .status span:last-child {
     display: none;
   }
 
-  .right {
-    gap: 0.55rem;
+  .account {
+    max-inline-size: 8.5rem;
   }
 }

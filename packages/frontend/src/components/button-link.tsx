@@ -1,27 +1,14 @@
-import type { AnchorHTMLAttributes } from "react";
+import { Button } from "@earendil-works/elanor-react";
+import type { ButtonProps } from "@earendil-works/elanor-react";
 
-import styles from "./button.module.css";
-import type { ButtonVariant } from "./button.tsx";
-
-export interface ButtonLinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
-  readonly size?: "small" | undefined;
-  readonly variant: Exclude<ButtonVariant, "icon" | "plain">;
+export interface ButtonLinkProps extends Omit<ButtonProps, "nativeButton" | "render" | "type"> {
+  readonly href: string;
 }
 
-export function ButtonLink({
-  className,
-  size,
-  variant,
-  ...props
-}: ButtonLinkProps): React.JSX.Element {
-  const classes = [
-    styles["base"],
-    styles[variant],
-    variant === "primary" && size === "small" ? styles["small"] : undefined,
-    className,
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return <a {...props} className={classes} />;
+/**
+ * An Elanor button that navigates. Base UI marks non-button elements as `role="button"`;
+ * navigation keeps the anchor's link role so it reads and behaves as a link.
+ */
+export function ButtonLink({ href, ...props }: ButtonLinkProps): React.JSX.Element {
+  return <Button {...props} nativeButton={false} render={<a href={href} />} role="link" />;
 }

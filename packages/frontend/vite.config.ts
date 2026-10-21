@@ -1,8 +1,10 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+import { elanorAssets } from "./scripts/elanor-assets.ts";
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), elanorAssets()],
   build: {
     target: "es2023",
   },

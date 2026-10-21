@@ -1,168 +1,60 @@
-.dialog {
-  width: min(40rem, calc(100vw - 2rem));
-  max-height: min(48rem, calc(100dvh - 2rem));
-  padding: 1.5rem;
-  overflow: auto;
+.note {
+  color: var(--semantic-color-text-secondary);
+  font: var(--semantic-typography-ui-secondary);
 }
 
-.dialog form {
+.section {
   display: grid;
-  gap: 1rem;
+  gap: var(--semantic-dimension-space-gap-medium);
 }
 
-.note,
-.safety {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--font-ui);
-  line-height: 1.5;
-}
-
-.list,
-.create {
-  display: grid;
-  gap: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-}
-
-.list h3,
-.create h3 {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 650;
-}
-
-.list p,
-.create p,
-.listEmpty {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--font-small);
-  line-height: 1.45;
-}
-
-.listHeading {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.listHeading > div {
-  display: grid;
-  gap: 0.25rem;
-}
-
-.listHeading > span {
+.count {
   display: inline-grid;
-  min-width: 1.5rem;
-  height: 1.5rem;
-  flex: 0 0 auto;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  color: var(--muted);
-  font: var(--font-caption) / 1 var(--mono);
+  min-inline-size: var(--semantic-dimension-size-small);
+  block-size: var(--semantic-dimension-size-small);
+  flex: none;
   place-items: center;
+  border-radius: var(--semantic-dimension-radius-full);
+  background: var(--semantic-color-background-fill-secondary);
+  color: var(--semantic-color-text-on-secondary-fill);
+  font: var(--semantic-typography-ui-tertiary);
 }
 
-.keyRow {
+.key {
   display: grid;
-  gap: 0.75rem;
-  padding: 1rem;
-  border: 1px solid var(--border);
-  background: color-mix(in oklch, var(--surface) 92%, var(--accent-soft));
+  gap: var(--semantic-dimension-space-gap-small);
+  padding: var(--semantic-dimension-space-padding-large);
+  border-radius: var(--semantic-dimension-radius-small);
+  background: var(--semantic-color-background-surface);
 }
 
-.keySummary {
-  display: grid;
-  min-width: 0;
-  gap: 0.65rem;
-}
-
-.keySummary > span {
-  display: grid;
-  min-width: 0;
-  gap: 0.25rem;
-}
-
-.keySummary b {
+.keyLabel {
+  min-inline-size: 0;
   overflow: hidden;
+  font: var(--semantic-typography-ui-label);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.keySummary small {
-  color: var(--muted);
-  font-family: var(--mono);
+.meta {
+  color: var(--semantic-color-text-secondary);
+  font: var(--semantic-typography-ui-tertiary);
 }
 
-.maskedKey,
-.keySummary pre {
-  margin: 0;
-  overflow: auto;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--border);
-  background: var(--surface-muted);
-  color: var(--text);
-  font: var(--font-caption) / 1.5 var(--mono);
+.secret code {
   white-space: pre-wrap;
   word-break: break-all;
-}
-
-.maskedKey {
-  color: var(--muted);
-}
-
-.legacyKey {
-  line-height: 1.45;
-}
-
-.keyActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem 0.75rem;
 }
 
 .createControls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
-  gap: 0.65rem;
-}
-
-.createControls button {
-  min-height: 2.55rem;
-}
-
-.createPrompt {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-top: 0.25rem;
-}
-
-.createPrompt p {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--font-small);
-}
-
-.safety {
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-  font-size: var(--font-small);
+  gap: var(--semantic-dimension-space-gap-small);
 }
 
 @media (width <= 34rem) {
   .createControls {
     grid-template-columns: 1fr;
-  }
-
-  .createPrompt {
-    align-items: start;
-    flex-direction: column;
   }
 }

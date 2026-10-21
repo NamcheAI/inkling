@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { Container, Layout } from "@earendil-works/elanor-react";
 import type { DocumentResponse } from "@earendil-works/inkling-protocol";
 
 import { useAppContext } from "./app-context.tsx";
@@ -24,15 +25,15 @@ export function ReaderScreen({
   }, [setParticipants]);
 
   return (
-    <main className={styles["layout"]} id="app" tabIndex={-1}>
-      <div className={styles["paper"]}>
+    <Layout.Main className={styles["layout"]} id="app" tabIndex={-1}>
+      <Container>
         <ReaderToolbar
           metadata={document.metadata}
           publicDocument={publicDocument}
           shared={shared}
         />
         <ReaderDocument document={document} />
-      </div>
-    </main>
+      </Container>
+    </Layout.Main>
   );
 }

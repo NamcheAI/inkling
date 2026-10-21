@@ -1,8 +1,16 @@
-import { useImperativeHandle, useRef } from "react";
+import { useImperativeHandle, useState } from "react";
+import type { RefObject } from "react";
+
+import { CloseIcon } from "@earendil-works/elanor-icons-react";
+import {
+  Checkbox,
+  IconButton,
+  Popover,
+  SelectionControlAndLabel,
+  Stack,
+} from "@earendil-works/elanor-react";
 
 import type { ProjectedCommentThread } from "../comments.ts";
-import { Button } from "./button.tsx";
-import { CheckboxField } from "./checkbox-field.tsx";
 import styles from "./comments.module.css";
 
 export interface CommentControlsHandle {
@@ -11,6 +19,7 @@ export interface CommentControlsHandle {
 }
 
 export interface CommentControlsProps {
+  readonly anchorRef: RefObject<HTMLElement | null>;
   readonly onShowResolvedChange: (show: boolean) => void;
   readonly orphaned: readonly ProjectedCommentThread[];
   readonly ref?: React.Ref<CommentControlsHandle> | undefined;
@@ -18,72 +27,89 @@ export interface CommentControlsProps {
 }
 
 export function CommentControls({
+  anchorRef,
   onShowResolvedChange,
   orphaned,
   ref,
   showResolved,
 }: CommentControlsProps): React.JSX.Element {
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
 
   useImperativeHandle(
     ref,
     () => ({
-      close: () => menuRef.current?.hidePopover(),
-      open: () => menuRef.current?.showPopover(),
+      close: () => setOpen(false),
+      open: () => setOpen(true),
     }),
     [],
   );
 
   return (
-    <div
-      aria-label="Comment controls"
-      className={styles["menu"]}
-      id="comment-menu"
-      popover="auto"
-      ref={menuRef}
-    >
-      <div className={styles["menuHeading"]}>
-        <div>
-          <p className={styles["eyebrow"]}>Anchored discussion</p>
-          <b>Comments in context</b>
-        </div>
-        <Button
-          aria-label="Close comment controls"
-          variant="icon"
-          onClick={() => menuRef.current?.hidePopover()}
-        >
-          ×
-        </Button>
-      </div>
-      <p>Select Markdown or rendered text to reveal its inline comment control.</p>
-      <CheckboxField
-        checked={showResolved}
-        className={styles["resolvedToggle"]}
-        data-show-resolved=""
-        label="Show resolved threads"
-        onChange={(event) => onShowResolvedChange(event.currentTarget.checked)}
-      />
-      <div className={styles["orphaned"]} data-orphaned-comments="" hidden={orphaned.length === 0}>
-        {orphaned.length === 0 ? null : (
-          <p>
-            <b>
-              {orphaned.length} orphaned {orphaned.length === 1 ? "thread" : "threads"}
-            </b>
-            <br />
-            Its original text was removed.
-          </p>
-        )}
-        {orphaned.map((projection) => (
-          <Button
-            data-comment-bubble={projection.thread.id}
-            data-comment-surface="preview"
-            key={projection.thread.id}
+    <Popover.Root onOpenChange={setOpen} open={open}>
+      <Popover.Portal>
+        <Popover.Positioner align="end" anchor={anchorRef} collisionPadding={16} sideOffset={8}>
+          <Popover.Popup
+            aria-label="Comment controls"
+            className={styles["menu"]}
+            data-comment-controls=""
+            id="comment-menu"
           >
-            <span>{projection.thread.messages[0]?.authorDisplayName ?? "Unknown author"}</span>
-            {projection.thread.messages[0]?.body ?? "Open comment"}
-          </Button>
-        ))}
-      </div>
-    </div>
+            <Stack align="start" direction="row" gap="auto">
+              <Stack gap="xxSmall">
+                <Popover.Title>Comments in context</Popover.Title>
+                <Popover.Description>
+                  Select Markdown or rendered text to reveal its inline comment control.
+                </Popover.Description>
+              </Stack>
+              <IconButton aria-label="Close comment controls" onClick={() => setOpen(false)}>
+                <CloseIcon />
+              </IconButton>
+            </Stack>
+            <SelectionControlAndLabel
+              control={
+                <Checkbox.Root
+                  checked={showResolved}
+                  data-show-resolved=""
+                  onCheckedChange={onShowResolvedChange}
+                >
+                  <Checkbox.Indicator />
+                </Checkbox.Root>
+              }
+            >
+              Show resolved threads
+            </SelectionControlAndLabel>
+            <div
+              className={styles["orphaned"]}
+              data-orphaned-comments=""
+              hidden={orphaned.length === 0}
+            >
+              {orphaned.length === 0 ? null : (
+                <p>
+                  <b>
+                    {orphaned.length} orphaned {orphaned.length === 1 ? "thread" : "threads"}
+                  </b>
+                  <br />
+                  Its original text was removed.
+                </p>
+              )}
+              {orphaned.map((projection) => (
+                <button
+                  className={styles["orphanedThread"]}
+                  data-comment-bubble={projection.thread.id}
+                  data-comment-surface="preview"
+                  key={projection.thread.id}
+                  type="button"
+                >
+                  <span>
+                    {projection.thread.messages[0]?.authorDisplayName ?? "Unknown author"}
+                  </span>
+                  {projection.thread.messages[0]?.body ?? "Open comment"}
+                </button>
+              ))}
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

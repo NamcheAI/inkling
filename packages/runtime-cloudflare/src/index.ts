@@ -21,6 +21,7 @@ import {
   decodeThemeJson,
   DigestLive,
   findBundledTheme,
+  isDefaultThemeSelection,
   finishGoogleAuthentication,
   handleMcpRequest,
   IdGeneratorLive,
@@ -870,7 +871,7 @@ async function route(request: Request, environment: CloudflareEnvironment): Prom
       const theme = await Effect.runPromise(themeFromEnvironment(environment.INKLING_THEME));
       return url.pathname === "/theme.css"
         ? themeCssResponse(theme)
-        : Response.json(theme, { headers: { "Cache-Control": "public, max-age=300" } });
+        : Response.json(theme ?? null, { headers: { "Cache-Control": "public, max-age=300" } });
     } catch {
       return new Response(
         url.pathname === "/theme.css"
@@ -945,8 +946,9 @@ async function route(request: Request, environment: CloudflareEnvironment): Prom
 
 function themeFromEnvironment(
   value: string | undefined,
-): Effect.Effect<ThemeConfiguration, ThemeError> {
+): Effect.Effect<ThemeConfiguration | undefined, ThemeError> {
   const selected = value?.trim();
+  if (isDefaultThemeSelection(selected)) return Effect.succeed(undefined);
   const bundled = findBundledTheme(selected);
   return bundled === undefined ? decodeThemeJson(selected ?? "") : Effect.succeed(bundled);
 }

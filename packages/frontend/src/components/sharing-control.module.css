@@ -1,90 +1,45 @@
-.dialog {
-  width: min(36rem, calc(100vw - 2rem));
-  max-height: min(48rem, calc(100dvh - 2rem));
-  padding: 1.5rem;
-  overflow: auto;
-}
-
-.dialog form {
+.section {
   display: grid;
-  gap: 1rem;
-}
-
-.linkList,
-.linkCreate {
-  display: grid;
-  gap: 0.85rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-}
-
-.linkList h3,
-.linkCreate h3 {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 650;
-}
-
-.listHeading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.listHeading span {
-  display: inline-grid;
-  min-width: 1.5rem;
-  height: 1.5rem;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  color: var(--muted);
-  font: var(--font-caption) / 1 var(--mono);
-  place-items: center;
-}
-
-.listEmpty {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--font-small);
-}
-
-.linkRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.linkRow > span {
-  display: grid;
-  min-width: 0;
-  gap: 0.25rem;
-}
-
-.linkRow b {
-  font-size: var(--font-ui);
-}
-
-.linkRow small {
-  color: var(--muted);
-  font: var(--font-caption) / 1.4 var(--mono);
-}
-
-.rowActions {
-  display: flex;
-  flex: none;
-  gap: 0.65rem;
-}
-
-.delete {
-  color: var(--danger);
+  gap: var(--semantic-dimension-space-gap-medium);
 }
 
 .note {
+  color: var(--semantic-color-text-secondary);
+  font: var(--semantic-typography-ui-secondary);
+}
+
+.count {
+  display: inline-grid;
+  min-inline-size: var(--semantic-dimension-size-small);
+  block-size: var(--semantic-dimension-size-small);
+  place-items: center;
+  border-radius: var(--semantic-dimension-radius-full);
+  background: var(--semantic-color-background-fill-secondary);
+  color: var(--semantic-color-text-on-secondary-fill);
+  font: var(--semantic-typography-ui-tertiary);
+}
+
+.links {
   margin: 0;
-  color: var(--muted);
-  font-size: var(--font-ui);
-  line-height: 1.5;
+  padding: 0;
+  list-style: none;
+}
+
+.link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--semantic-dimension-space-gap-medium);
+  padding-block: var(--semantic-dimension-space-padding-medium);
+  border-block-end: var(--semantic-dimension-border-width-small) solid
+    var(--semantic-color-border-secondary);
+}
+
+.linkLabel {
+  font: var(--semantic-typography-ui-label);
+}
+
+.meta {
+  color: var(--semantic-color-text-secondary);
+  font: var(--semantic-typography-ui-tertiary);
 }

@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 
+import { CloseIcon } from "@earendil-works/elanor-icons-react";
+import { Button, IconButton, Stack } from "@earendil-works/elanor-react";
 import type { CommentThreadDto } from "@earendil-works/inkling-protocol";
 
 import { AnchoredPopover } from "./anchored-popover.tsx";
-import { Button } from "./button.tsx";
 import { CommentComposer } from "./comment-composer.tsx";
 import styles from "./comments.module.css";
 
@@ -63,42 +64,47 @@ export function CommentThreadCard({
       aria-label="Comment thread"
       className={styles["card"]}
       data-comment-card=""
+      onClose={onClose}
       open={thread !== undefined}
     >
       {thread === undefined ? null : (
         <section
           className={`${styles["thread"]}${thread.resolved ? ` ${styles["resolved"]}` : ""}`}
         >
-          <div className={styles["threadHeading"]}>
-            <span>Thread</span>
-            <Button
-              aria-label="Close comment thread"
-              variant="icon"
-              data-comment-close=""
-              onClick={onClose}
-            >
-              ×
-            </Button>
-          </div>
-          <blockquote>{thread.anchor.quote || "Orphaned selection"}</blockquote>
+          <Stack align="center" direction="row" gap="auto">
+            <span className={styles["threadLabel"]}>
+              {thread.resolved ? "Resolved thread" : "Thread"}
+            </span>
+            <IconButton aria-label="Close comment thread" data-comment-close="" onClick={onClose}>
+              <CloseIcon />
+            </IconButton>
+          </Stack>
+          <blockquote className={styles["quote"]}>
+            {thread.anchor.quote || "Orphaned selection"}
+          </blockquote>
           {thread.messages.map((message) => (
             <div className={styles["message"]} key={message.id}>
               <b>{message.authorDisplayName}</b>
               <p>{message.body}</p>
-              <span>
+              <Stack direction="row" gap="xSmall">
                 <Button
                   data-edit-message={`${thread.id}:${message.id}`}
+                  density="compact"
+                  hierarchy="tertiary"
                   onClick={() => onEdit(message.id, message.body)}
                 >
                   Edit
                 </Button>
                 <Button
                   data-delete-message={`${thread.id}:${message.id}`}
+                  density="compact"
+                  hierarchy="tertiary"
                   onClick={() => onDeleteMessage(message.id)}
+                  semantic="negative"
                 >
                   Delete
                 </Button>
-              </span>
+              </Stack>
             </div>
           ))}
           {replyComposer === undefined ? null : (
@@ -111,21 +117,26 @@ export function CommentThreadCard({
               title="Reply to thread"
             />
           )}
-          <div className={styles["actions"]}>
+          <Stack className={styles["threadActions"]} direction="row" gap="xSmall" wrap="wrap">
             {canReply && replyComposer === undefined ? (
-              <Button data-reply-thread={thread.id} onClick={onReply}>
+              <Button data-reply-thread={thread.id} hierarchy="secondary" onClick={onReply}>
                 Reply
               </Button>
             ) : null}
-            <Button data-resolve-thread={thread.id} onClick={onResolve}>
+            <Button data-resolve-thread={thread.id} hierarchy="secondary" onClick={onResolve}>
               {thread.resolved ? "Reopen" : "Resolve"}
             </Button>
             {canManage ? (
-              <Button data-delete-thread={thread.id} onClick={onDeleteThread}>
+              <Button
+                data-delete-thread={thread.id}
+                hierarchy="tertiary"
+                onClick={onDeleteThread}
+                semantic="negative"
+              >
                 Delete thread
               </Button>
             ) : null}
-          </div>
+          </Stack>
         </section>
       )}
     </AnchoredPopover>

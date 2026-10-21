@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Effect } from "effect";
 
+import { Layout } from "@earendil-works/elanor-react";
+
 import type {
   CatalogResponse,
   DocumentResponse,
@@ -127,18 +129,20 @@ export function App(): React.JSX.Element {
 
   return (
     <AppContext.Provider value={context}>
-      <AppHeader
-        account={route.state.data?.account}
-        api={route.state.data?.api}
-        breadcrumbs={breadcrumbs}
-        participants={participants}
-        status={status}
-      />
-      <RouteView
-        navigationKey={locationState.generation}
-        refresh={route.refresh}
-        state={route.state}
-      />
+      <Layout.Root>
+        <AppHeader
+          account={route.state.data?.account}
+          api={route.state.data?.api}
+          breadcrumbs={breadcrumbs}
+          participants={participants}
+          status={status}
+        />
+        <RouteView
+          navigationKey={locationState.generation}
+          refresh={route.refresh}
+          state={route.state}
+        />
+      </Layout.Root>
       <ToastRegion ref={toastRef} />
     </AppContext.Provider>
   );

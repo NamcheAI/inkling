@@ -1,87 +1,60 @@
-import { useEffect, useRef } from "react";
 import type { ComponentPropsWithoutRef, ReactNode, RefObject } from "react";
+
+import { Popover } from "@earendil-works/elanor-react";
 
 import styles from "./comments.module.css";
 
 export interface AnchoredPopoverProps extends Omit<
-  ComponentPropsWithoutRef<"aside">,
-  "children" | "popover"
+  ComponentPropsWithoutRef<"div">,
+  "children" | "className"
 > {
   readonly anchorRef: RefObject<HTMLElement | undefined>;
+  /** Changes whenever `anchorRef` points at another element, so the popover follows it. */
   readonly anchorRevision: number;
   readonly children: ReactNode;
+  readonly className?: string | undefined;
+  readonly onClose: () => void;
   readonly open: boolean;
 }
 
+/**
+ * An Elanor popover anchored to an element outside React, such as a comment bubble that
+ * CodeMirror or the rendered preview owns. Escape and pressing outside call `onClose`.
+ */
 export function AnchoredPopover({
   anchorRef,
   anchorRevision,
   children,
   className,
+  onClose,
   open,
   ...props
 }: AnchoredPopoverProps): React.JSX.Element {
-  const popoverRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    const popover = popoverRef.current;
-    if (popover === null) return;
-    if (open && !popover.matches(":popover-open")) popover.showPopover();
-    if (!open && popover.matches(":popover-open")) popover.hidePopover();
-  }, [open]);
-
-  useEffect(() => {
-    const popover = popoverRef.current;
-    if (popover === null || !open) return;
-    const position = (): void => {
-      if (!popover.matches(":popover-open")) return;
-      if (matchMedia("(width <= 52rem)").matches) {
-        popover.style.removeProperty("--anchored-popover-left");
-        popover.style.removeProperty("--anchored-popover-top");
-        return;
-      }
-      const anchor = anchorRef.current;
-      if (anchor === undefined || !anchor.isConnected) return;
-      const anchorRect = anchor.getBoundingClientRect();
-      const popoverRect = popover.getBoundingClientRect();
-      const gap = 12;
-      const left = Math.max(
-        gap,
-        Math.min(
-          innerWidth - popoverRect.width - gap,
-          anchorRect.right + gap + popoverRect.width <= innerWidth
-            ? anchorRect.right + gap
-            : anchorRect.left - popoverRect.width - gap,
-        ),
-      );
-      const top = Math.max(
-        gap,
-        Math.min(innerHeight - popoverRect.height - gap, anchorRect.top - 18),
-      );
-      popover.style.setProperty("--anchored-popover-left", `${left}px`);
-      popover.style.setProperty("--anchored-popover-top", `${top}px`);
-    };
-    const frame = requestAnimationFrame(position);
-    const observer = new ResizeObserver(position);
-    observer.observe(popover);
-    document.addEventListener("scroll", position, true);
-    window.addEventListener("resize", position);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-      document.removeEventListener("scroll", position, true);
-      window.removeEventListener("resize", position);
-    };
-  }, [anchorRef, anchorRevision, open]);
-
+  // The anchor lives outside React; `anchorRevision` re-renders this component when it moves.
+  const anchor = open && anchorRevision >= 0 ? anchorRef.current : undefined;
   return (
-    <aside
-      {...props}
-      className={[styles["anchoredPopover"], className].filter(Boolean).join(" ")}
-      popover="manual"
-      ref={popoverRef}
+    <Popover.Root
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      open={open && anchor !== undefined}
     >
-      {children}
-    </aside>
+      <Popover.Portal>
+        <Popover.Positioner
+          align="start"
+          anchor={anchor}
+          collisionPadding={12}
+          side="right"
+          sideOffset={12}
+        >
+          <Popover.Popup
+            {...props}
+            className={[styles["anchoredPopover"], className].filter(Boolean).join(" ")}
+          >
+            {children}
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

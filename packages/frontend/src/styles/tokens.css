@@ -1,0 +1,115 @@
+/*
+ * Inkling's domain tokens, derived from Elanor's semantic tokens so they follow
+ * the color scheme. Deployment themes (/theme.css) override the same names.
+ */
+:root {
+  --heading-font: var(--semantic-font-family-prose);
+  --page-padding: var(--semantic-dimension-space-padding-xxxx-large);
+  --masthead-height: var(--semantic-dimension-size-top-navigation);
+
+  --editor-background: var(--semantic-color-background-surface);
+  --editor-active-line-background: color-mix(
+    in oklch,
+    var(--semantic-color-background-surface) 95%,
+    var(--semantic-color-text-primary)
+  );
+
+  --participant-text: var(--primitive-color-black);
+  --presence-lightness: 68;
+  --presence-chroma: 0.16;
+  --presence-hue-offset: 0;
+
+  --state-draft-bg: var(--semantic-color-background-fill-secondary);
+  --state-draft-border: var(--semantic-color-background-fill-secondary);
+  --state-draft-text: var(--semantic-color-text-on-secondary-fill);
+  --state-discussion-bg: var(--semantic-color-background-fill-secondary-warning);
+  --state-discussion-border: var(--semantic-color-background-fill-secondary-warning);
+  --state-discussion-text: var(--semantic-color-text-on-secondary-fill-warning);
+  --state-published-bg: var(--semantic-color-background-fill-secondary-information);
+  --state-published-border: var(--semantic-color-background-fill-secondary-information);
+  --state-published-text: var(--semantic-color-text-on-secondary-fill-information);
+  --state-accepted-bg: var(--semantic-color-background-fill-secondary-positive);
+  --state-accepted-border: var(--semantic-color-background-fill-secondary-positive);
+  --state-accepted-text: var(--semantic-color-text-on-secondary-fill-positive);
+  --state-implemented-bg: var(--semantic-color-background-fill-primary-positive);
+  --state-implemented-border: var(--semantic-color-background-fill-primary-positive);
+  --state-implemented-text: var(--semantic-color-text-on-primary-fill);
+  --state-abandoned-bg: var(--semantic-color-background-fill-secondary-negative);
+  --state-abandoned-border: var(--semantic-color-background-fill-secondary-negative);
+  --state-abandoned-text: var(--semantic-color-text-on-secondary-fill-negative);
+
+  --visibility-public-bg: color-mix(
+    in oklch,
+    var(--semantic-color-background-fill-secondary-positive) 35%,
+    var(--semantic-color-background-canvas)
+  );
+  --visibility-public-hover: color-mix(
+    in oklch,
+    var(--semantic-color-background-fill-secondary-positive) 70%,
+    var(--semantic-color-background-canvas)
+  );
+  --visibility-public-border: var(--semantic-color-border-positive);
+  --visibility-public-text: var(--semantic-color-text-on-secondary-fill-positive);
+  --visibility-private-bg: var(--semantic-color-background-canvas);
+  --visibility-private-hover: var(--semantic-color-background-fill-ghost-neutral-hover);
+  --visibility-private-border: var(--semantic-color-border-secondary);
+  --visibility-private-text: var(--semantic-color-text-on-secondary-fill);
+  --visibility-confidential-bg: color-mix(
+    in oklch,
+    var(--semantic-color-background-fill-secondary-negative) 35%,
+    var(--semantic-color-background-canvas)
+  );
+  --visibility-confidential-hover: color-mix(
+    in oklch,
+    var(--semantic-color-background-fill-secondary-negative) 70%,
+    var(--semantic-color-background-canvas)
+  );
+  --visibility-confidential-border: var(--semantic-color-border-negative);
+  --visibility-confidential-text: var(--semantic-color-text-on-secondary-fill-negative);
+
+  --code-background: var(--semantic-color-background-fill-secondary);
+  --code-text: var(--semantic-color-text-code);
+  --code-comment: var(--semantic-color-text-code-comment);
+  --code-keyword: var(--semantic-color-text-code-keyword);
+  --code-title: var(--semantic-color-text-code-function);
+  --code-attribute: var(--semantic-color-text-code-variable);
+  --code-string: var(--semantic-color-text-code-string);
+  --code-symbol: var(--semantic-color-text-code-number);
+  --code-addition: var(--semantic-color-background-fill-secondary-positive);
+  --code-deletion: var(--semantic-color-background-fill-secondary-negative);
+  --code-invalid: var(--semantic-color-text-negative);
+
+  --mermaid-background: var(--semantic-color-background-canvas);
+  --mermaid-primary: var(--semantic-color-background-fill-secondary);
+  --mermaid-primary-text: var(--semantic-color-text-primary);
+  --mermaid-primary-border: var(--semantic-color-border-primary);
+  --mermaid-line: var(--semantic-color-text-secondary);
+  --mermaid-secondary: var(--semantic-color-background-fill-secondary-information);
+  --mermaid-tertiary: var(--semantic-color-background-fill-secondary-positive);
+  --mermaid-note: var(--semantic-color-background-fill-secondary-warning);
+  --mermaid-note-text: var(--semantic-color-text-primary);
+}
+
+:root[data-color-scheme="dark"] {
+  --presence-lightness: 76;
+  --presence-chroma: 0.14;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-color-scheme]) {
+    --presence-lightness: 76;
+    --presence-chroma: 0.14;
+  }
+}
+
+@media (width <= 52rem) {
+  :root {
+    --page-padding: var(--semantic-dimension-space-padding-xx-large);
+  }
+}
+
+@media (width <= 34rem) {
+  :root {
+    --page-padding: var(--semantic-dimension-space-padding-x-large);
+  }
+}

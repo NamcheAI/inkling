@@ -1,10 +1,18 @@
 import { useMemo } from "react";
 
+import { ArrowBackIcon, LabelIcon } from "@earendil-works/elanor-icons-react";
+import {
+  Container,
+  EmptyState,
+  Layout,
+  Page,
+  PageHeader,
+  Text,
+} from "@earendil-works/elanor-react";
 import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
 import { ButtonLink } from "./components/button-link.tsx";
 import { DocumentCatalog } from "./components/document-catalog.tsx";
-import emptyStateStyles from "./components/empty-state.module.css";
 import styles from "./labels-screen.module.css";
 import workspaceStyles from "./workspace.module.css";
 
@@ -29,47 +37,66 @@ export function LabelsScreen({
     selectedLabel === undefined ? undefined : groups.find((group) => group.label === selectedLabel);
 
   return (
-    <main className={workspaceStyles["layout"]} data-workspace-layout="" id="app" tabIndex={-1}>
-      <section className={workspaceStyles["heading"]} data-workspace-heading="">
-        <div>
-          <h1>{selectedLabel ?? "Labels"}</h1>
-        </div>
-        <ButtonLink href="/" variant="text">
-          All documents
-        </ButtonLink>
-      </section>
-      {selectedLabel === undefined ? (
-        <LabelIndex groups={groups} />
-      ) : (
-        <section aria-live="polite">
-          <div className={styles["resultsHeading"]}>
-            <p>
-              {selected === undefined
-                ? "No notes or RFCs use this label."
-                : `${selected.documents.length} ${selected.documents.length === 1 ? "entry" : "entries"}`}
-            </p>
-            <ButtonLink href="/labels" variant="text">
-              Browse all labels
-            </ButtonLink>
-          </div>
-          <DocumentCatalog
-            catalog={{ documents: selected?.documents ?? [] }}
-            publicCatalog={publicCatalog}
-          />
-        </section>
-      )}
-    </main>
+    <Layout.Main
+      className={workspaceStyles["layout"]}
+      data-workspace-layout=""
+      id="app"
+      tabIndex={-1}
+    >
+      <Container>
+        <Page>
+          <PageHeader.Root data-workspace-heading="">
+            <PageHeader.Row>
+              <PageHeader.Title level={1}>{selectedLabel ?? "Labels"}</PageHeader.Title>
+              <PageHeader.Actions>
+                <ButtonLink hierarchy="tertiary" iconStart={<ArrowBackIcon />} href="/">
+                  All documents
+                </ButtonLink>
+              </PageHeader.Actions>
+            </PageHeader.Row>
+          </PageHeader.Root>
+          {selectedLabel === undefined ? (
+            <LabelIndex groups={groups} />
+          ) : (
+            <section aria-live="polite" className={styles["results"]}>
+              <div className={styles["resultsHeading"]}>
+                <Text className={styles["resultCount"]}>
+                  {selected === undefined
+                    ? "No notes or RFCs use this label."
+                    : `${selected.documents.length} ${selected.documents.length === 1 ? "entry" : "entries"}`}
+                </Text>
+                <ButtonLink hierarchy="tertiary" iconStart={<LabelIcon />} href="/labels">
+                  Browse all labels
+                </ButtonLink>
+              </div>
+              <DocumentCatalog
+                catalog={{ documents: selected?.documents ?? [] }}
+                publicCatalog={publicCatalog}
+              />
+            </section>
+          )}
+        </Page>
+      </Container>
+    </Layout.Main>
   );
 }
 
 function LabelIndex({ groups }: { readonly groups: readonly LabelGroup[] }): React.JSX.Element {
   if (groups.length === 0) {
     return (
-      <section className={emptyStateStyles["root"]} data-empty-state="" data-label-index="">
-        <span>Ø</span>
-        <h2>No labels yet.</h2>
-        <p>Add labels in a note or RFC’s Markdown frontmatter.</p>
-      </section>
+      <EmptyState.Root data-empty-state="" data-label-index="">
+        <EmptyState.Illustration>
+          <LabelIcon aria-hidden="true" className={styles["illustration"]} />
+        </EmptyState.Illustration>
+        <EmptyState.Body>
+          <EmptyState.Copy>
+            <EmptyState.Title level={2}>No labels yet.</EmptyState.Title>
+            <EmptyState.Description>
+              Add labels in a note or RFC’s Markdown frontmatter.
+            </EmptyState.Description>
+          </EmptyState.Copy>
+        </EmptyState.Body>
+      </EmptyState.Root>
     );
   }
 

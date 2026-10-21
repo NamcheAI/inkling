@@ -91,10 +91,11 @@ test(
       ]);
       assert.equal(await first.locator("[data-account-menu]").isVisible(), false);
       await first.locator("[data-account-trigger]").click();
-      assert.deepEqual(await first.locator("[data-account-menu] button").allTextContents(), [
-        "API keys",
-        "Sign out",
-      ]);
+      await first.locator("[data-account-menu]").waitFor();
+      assert.deepEqual(
+        await first.locator('[data-account-menu] [role="menuitem"]').allTextContents(),
+        ["API keys", "Sign out"],
+      );
       await first.locator("[data-open-api-keys]").click();
       assert.equal(await first.locator("[data-settings-dialog] [data-dialog-eyebrow]").count(), 0);
       assert.equal(await first.locator("[data-settings-dialog] h2").textContent(), "API keys");
@@ -192,9 +193,9 @@ test(
       );
       await first.getByLabel("Close API keys").click();
 
-      const initialTheme = await first.locator("html").getAttribute("data-theme");
+      const initialScheme = await first.locator("html").getAttribute("data-color-scheme");
       await first.locator("[data-theme-toggle]").dblclick();
-      assert.notEqual(await first.locator("html").getAttribute("data-theme"), initialTheme);
+      assert.notEqual(await first.locator("html").getAttribute("data-color-scheme"), initialScheme);
       await first.locator("[data-new-document]").click();
       await first.locator('input[name="title"]').fill("Browser collaboration");
       assert.equal(await first.locator('textarea[name="body"]').count(), 0);
@@ -434,7 +435,7 @@ test(
       );
       assert.match(
         await first.locator("[data-preview-scroller] [data-document-metadata]").innerText(),
-        /Authors\s+Browser Admin[\s\S]+Created[\s\S]+Updated/iu,
+        /Authors:?\s+Browser Admin[\s\S]+Created[\s\S]+Updated/iu,
       );
       assert.equal(
         await first
@@ -597,7 +598,7 @@ test(
       await first.waitForSelector("[data-reader-toc]");
       assert.match(
         await first.locator("[data-reader] [data-document-metadata]").innerText(),
-        /Authors\s+Browser Admin[\s\S]+Created[\s\S]+Updated/iu,
+        /Authors:?\s+Browser Admin[\s\S]+Created[\s\S]+Updated/iu,
       );
       assert.equal(
         await first.getByRole("navigation", { name: "On this page" }).locator("p").textContent(),
@@ -608,12 +609,7 @@ test(
       const deliveryTocLink = readerToc.getByRole("link", { name: "Delivery" });
       assert.equal(await architectureTocLink.getAttribute("href"), "#architecture");
       assert.equal(await architectureTocLink.getAttribute("aria-current"), "location");
-      assert.equal(
-        await architectureTocLink
-          .locator("..")
-          .evaluate((item) => getComputedStyle(item, "::before").width),
-        "2px",
-      );
+      assert.equal(await architectureTocLink.getAttribute("data-active"), "");
       await first.locator("#delivery").evaluate((heading) => heading.scrollIntoView());
       await first.waitForFunction(
         () =>
@@ -810,8 +806,8 @@ test(
           prose: getComputedStyle(document.body).fontFamily,
         };
       });
-      assert.match(typography.prose, /Newsreader/u);
-      assert.match(typography.editor, /JetBrains Mono/u);
+      assert.match(typography.prose, /Earendil/u);
+      assert.match(typography.editor, /Commit Mono/u);
       assert.equal(typography.code, typography.editor);
       assert.ok(typography.heading1 > typography.heading2);
       assert.ok(typography.heading1 <= 36);
@@ -830,7 +826,7 @@ test(
         ) {
           throw new Error("Editor appearance elements are missing.");
         }
-        const originalTheme = document.documentElement.dataset["theme"];
+        const originalScheme = document.documentElement.dataset["colorScheme"];
         const canvasContext = document.createElement("canvas").getContext("2d");
         if (canvasContext === null) throw new Error("Canvas is unavailable.");
         const brightness = (color: string): number => {
@@ -840,7 +836,7 @@ test(
           return red + green + blue;
         };
         const sampleTheme = (theme: "dark" | "light") => {
-          document.documentElement.dataset["theme"] = theme;
+          document.documentElement.dataset["colorScheme"] = theme;
           return {
             activeLine: brightness(getComputedStyle(activeLine).backgroundColor),
             editor: brightness(getComputedStyle(editor).backgroundColor),
@@ -850,8 +846,8 @@ test(
         };
         const light = sampleTheme("light");
         const dark = sampleTheme("dark");
-        if (originalTheme === undefined) delete document.documentElement.dataset["theme"];
-        else document.documentElement.dataset["theme"] = originalTheme;
+        if (originalScheme === undefined) delete document.documentElement.dataset["colorScheme"];
+        else document.documentElement.dataset["colorScheme"] = originalScheme;
         await new Promise<void>((resolve) => {
           requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
         });
@@ -878,21 +874,12 @@ test(
       assert.match(editorAppearance.codeKeyword, /^oklch\(/u);
       const compactToc = await first
         .locator("[data-preview-scroller] [data-reader-toc]")
-        .evaluate((toc) => {
-          const list = toc.querySelector("ol");
-          const link = toc.querySelector("a");
-          if (list === null || link === null) throw new Error("Preview TOC is incomplete.");
-          return {
-            display: getComputedStyle(list).display,
-            overflowX: getComputedStyle(list).overflowX,
-            whiteSpace: getComputedStyle(link).whiteSpace,
-          };
-        });
-      assert.deepEqual(compactToc, {
-        display: "flex",
-        overflowX: "auto",
-        whiteSpace: "nowrap",
-      });
+        .evaluate((toc) => ({
+          position: getComputedStyle(toc).position,
+          trigger: toc.querySelector("button")?.textContent ?? "",
+        }));
+      assert.equal(compactToc.position, "sticky");
+      assert.match(compactToc.trigger, /On this page: \S/u);
       const synchronizedScroll = await first.evaluate(async () => {
         const source = document.querySelector<HTMLElement>(".cm-scroller");
         const preview = document.querySelector<HTMLElement>("[data-preview-scroller]");
@@ -1034,9 +1021,7 @@ test(
       );
       await sourceCommentComposer.click();
       await first.waitForFunction(
-        () =>
-          document.querySelector("[data-comment-composer-popover]")?.matches(":popover-open") ===
-          true,
+        () => document.querySelector("[data-comment-composer-popover]")?.checkVisibility() === true,
       );
       assert.equal(await first.locator("[data-comment-composer-dialog]").count(), 0);
       await first.locator("[data-comment-composer-popover] [data-comment-cancel]").click();
@@ -1156,7 +1141,7 @@ test(
         .click();
       await second.waitForFunction(
         () =>
-          document.querySelector("[data-comment-card]")?.matches(":popover-open") === true &&
+          document.querySelector("[data-comment-card]")?.checkVisibility() === true &&
           document
             .querySelector("[data-comment-card]")
             ?.textContent?.includes("Browser comment") === true,
@@ -1236,7 +1221,7 @@ test(
       );
 
       await first.locator("[data-share]").click();
-      await first.getByLabel("Anyone with this link can").selectOption("edit");
+      await first.getByRole("radio", { name: "View, comment, and edit" }).check();
       await first.getByRole("button", { name: "Create and copy link" }).click();
       await first.locator('[data-share-link] >> text="Can edit"').waitFor();
       const capabilityUrl = await first.evaluate(async (id) => {
@@ -1291,8 +1276,8 @@ test(
         "block",
       );
 
-      await first.getByLabel("Anyone with this link can").selectOption("view");
-      await first.getByLabel("Require a password").check();
+      await first.getByRole("radio", { exact: true, name: "View" }).check();
+      await first.getByRole("checkbox", { name: "Require a password" }).check();
       await first.getByLabel("Password", { exact: true }).fill("browser share password");
       await first.getByRole("button", { name: "Create and copy link" }).click();
       const protectedRow = first.locator("[data-share-link]", { hasText: "Password protected" });

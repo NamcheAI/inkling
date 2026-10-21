@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
+import { KeyboardArrowDownIcon, KeyIcon, LogoutIcon } from "@earendil-works/elanor-icons-react";
+import { Button, Menu } from "@earendil-works/elanor-react";
 import type { AuthenticationStatus } from "@earendil-works/inkling-protocol";
 
-import type { ApiClientService } from "../api.ts";
-import styles from "./account-control.module.css";
-import { Button } from "./button.tsx";
-import { LogoutButton } from "./logout-button.tsx";
+import type { ApiClientService, ApiError } from "../api.ts";
+import { useAppContext } from "../app-context.tsx";
+import { useEffectAction } from "../effect-hooks.ts";
+import styles from "./app-header.module.css";
 import { SettingsDialog } from "./settings-dialog.tsx";
 
 export interface AccountControlProps {
@@ -14,68 +16,51 @@ export interface AccountControlProps {
 }
 
 export function AccountControl({ account, api }: AccountControlProps): React.JSX.Element {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { navigate } = useAppContext();
   const [apiKeysOpen, setApiKeysOpen] = useState(false);
+  const logout = useEffectAction<void, void, ApiError>(() => api.logout);
   const accountName = account.displayName.trim() || account.email?.trim() || "Account";
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const dismiss = (event: PointerEvent): void => {
-      if (!detailsRef.current?.contains(event.target as Node))
-        detailsRef.current?.removeAttribute("open");
-    };
-    const dismissWithKeyboard = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape") return;
-      detailsRef.current?.removeAttribute("open");
-      detailsRef.current?.querySelector<HTMLElement>("summary")?.focus();
-    };
-    document.addEventListener("pointerdown", dismiss);
-    document.addEventListener("keydown", dismissWithKeyboard);
-    return () => {
-      document.removeEventListener("pointerdown", dismiss);
-      document.removeEventListener("keydown", dismissWithKeyboard);
-    };
-  }, [menuOpen]);
-
-  const closeMenu = (): void => {
-    detailsRef.current?.removeAttribute("open");
-  };
 
   return (
     <>
-      <details
-        className={styles["root"]}
-        data-account=""
-        onToggle={(event) => setMenuOpen(event.currentTarget.open)}
-        ref={detailsRef}
-      >
-        <summary
-          aria-haspopup="menu"
-          className={styles["trigger"]}
+      <Menu.Root>
+        <Menu.Trigger
+          className={styles["account"]}
+          data-account=""
           data-account-trigger=""
+          render={<Button hierarchy="tertiary" iconEnd={<KeyboardArrowDownIcon />} />}
           title={account.email ?? accountName}
         >
-          <strong data-account-name="">{accountName}</strong>
-          <svg aria-hidden="true" viewBox="0 0 12 12">
-            <path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" />
-          </svg>
-        </summary>
-        <div className={styles["menu"]} data-account-menu="" role="menu">
-          <Button
-            data-open-api-keys=""
-            onClick={() => {
-              closeMenu();
-              setApiKeysOpen(true);
-            }}
-            role="menuitem"
-            variant="text"
-          >
-            API keys
-          </Button>
-          <LogoutButton api={api} role="menuitem" />
-        </div>
-      </details>
+          <span className={styles["accountName"]} data-account-name="">
+            {accountName}
+          </span>
+        </Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Positioner align="end" sideOffset={4}>
+            <Menu.Popup data-account-menu="">
+              <Menu.Item
+                data-open-api-keys=""
+                icon={<KeyIcon />}
+                onClick={() => setApiKeysOpen(true)}
+              >
+                API keys
+              </Menu.Item>
+              <Menu.Separator />
+              <Menu.Item
+                closeOnClick={false}
+                data-logout=""
+                disabled={logout.state.pending}
+                icon={<LogoutIcon />}
+                onClick={() =>
+                  logout.execute(undefined, { onSuccess: () => navigate("/", { replace: true }) })
+                }
+              >
+                {logout.state.pending ? "Signing out…" : "Sign out"}
+              </Menu.Item>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
       {apiKeysOpen ? <SettingsDialog api={api} onClose={() => setApiKeysOpen(false)} /> : null}
     </>
   );

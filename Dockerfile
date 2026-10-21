@@ -10,6 +10,8 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json theme.schema.json .npmrc ./
 COPY themes ./themes
 COPY packages ./packages
+# Elanor is built from its submodule before the image (`make setup`); the image copies the build output.
+COPY vendor/elanor ./vendor/elanor
 RUN pnpm install --frozen-lockfile \
       --filter @earendil-works/inkling-cli... \
       --filter @earendil-works/inkling-frontend \

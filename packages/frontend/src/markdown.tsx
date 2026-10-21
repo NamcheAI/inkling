@@ -78,12 +78,18 @@ async function renderMermaidDiagram(mermaid: Mermaid, diagram: HTMLElement): Pro
 export function useThemeRevision(): number {
   const [revision, setRevision] = useState(0);
   useEffect(() => {
-    const observer = new MutationObserver(() => setRevision((current) => current + 1));
+    const update = (): void => setRevision((current) => current + 1);
+    const observer = new MutationObserver(update);
     observer.observe(document.documentElement, {
-      attributeFilter: ["data-theme"],
+      attributeFilter: ["data-color-scheme"],
       attributes: true,
     });
-    return () => observer.disconnect();
+    const systemScheme = matchMedia("(prefers-color-scheme: dark)");
+    systemScheme.addEventListener("change", update);
+    return () => {
+      observer.disconnect();
+      systemScheme.removeEventListener("change", update);
+    };
   }, []);
   return revision;
 }
@@ -110,7 +116,7 @@ function mermaidThemeVariables(): Record<string, string> {
     clusterBkg: value("--mermaid-tertiary"),
     clusterBorder: border,
     edgeLabelBackground: background,
-    fontFamily: style.getPropertyValue("--sans").trim(),
+    fontFamily: style.getPropertyValue("--semantic-font-family-ui").trim(),
     labelBackground: background,
     labelBoxBkgColor: value("--mermaid-primary"),
     labelBoxBorderColor: border,

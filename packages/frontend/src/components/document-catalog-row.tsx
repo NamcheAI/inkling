@@ -3,7 +3,8 @@ import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
 import { documentHref, formatDate, publicDocumentHref } from "../ui.ts";
 import styles from "./document-catalog.module.css";
-import { LifecycleStateChip } from "./lifecycle-state-chip.tsx";
+import chipStyles from "./chip.module.css";
+import { LifecycleStateChip, VisibilityChip } from "./chip.tsx";
 
 export interface DocumentCatalogRowProps {
   readonly document: CatalogResponse["documents"][number];
@@ -46,7 +47,7 @@ export function DocumentCatalogRow({
         <span className={styles["title"]}>
           <strong>{metadata.title}</strong>
           {!publicDocument && hasPendingPublicationChanges(metadata) ? (
-            <span className={styles["pending"]} data-pending-edits="">
+            <span className={chipStyles["chip"]} data-pending-edits="">
               Pending edits
             </span>
           ) : null}
@@ -54,14 +55,12 @@ export function DocumentCatalogRow({
         <small>{excerpt || "No body text yet"}</small>
       </span>
       <span className={styles["meta"]} data-catalog-metadata="">
-        <span
-          className={styles["visibility"]}
-          data-catalog-visibility=""
-          data-document-visibility={metadata.visibility}
-        >
-          {metadata.visibility}
+        <span className={styles["chipCell"]} data-catalog-visibility="">
+          <VisibilityChip visibility={metadata.visibility} />
         </span>
-        <LifecycleStateChip className={styles["state"]} state={metadata.lifecycleState} />
+        <span className={styles["chipCell"]}>
+          <LifecycleStateChip state={metadata.lifecycleState} />
+        </span>
         <time dateTime={metadata.updatedAt}>{formatDate(metadata.updatedAt)}</time>
       </span>
     </a>

@@ -1,16 +1,18 @@
 import { useEffect, useRef } from "react";
 import { Fiber } from "effect";
 
+import { Prose } from "@earendil-works/elanor-react";
+
 import { browserRuntime } from "../effect-runtime.ts";
 import { renderMermaid, useThemeRevision } from "../markdown.tsx";
 import type { RenderedMarkdown } from "../markdown.tsx";
+import styles from "./markdown-article.module.css";
 
 export interface MarkdownArticleProps {
-  readonly className?: string | undefined;
   readonly rendered: RenderedMarkdown;
 }
 
-export function MarkdownArticle({ className, rendered }: MarkdownArticleProps): React.JSX.Element {
+export function MarkdownArticle({ rendered }: MarkdownArticleProps): React.JSX.Element {
   const articleRef = useRef<HTMLElement>(null);
   const themeRevision = useThemeRevision();
 
@@ -24,13 +26,14 @@ export function MarkdownArticle({ className, rendered }: MarkdownArticleProps): 
   }, [rendered.html, themeRevision]);
 
   return (
-    <article
+    <Prose
       aria-busy={rendered.loading}
-      className={className}
+      className={styles["body"]}
+      dangerouslySetInnerHTML={{ __html: rendered.html }}
       data-preview=""
       key={themeRevision}
-      ref={articleRef}
-      dangerouslySetInnerHTML={{ __html: rendered.html }}
+      ref={articleRef as React.Ref<HTMLDivElement>}
+      render={<article />}
     />
   );
 }

@@ -1,10 +1,10 @@
+import { Button } from "@earendil-works/elanor-react";
 import type { DocumentMetadataDto } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService, ApiError } from "../api.ts";
 import { useAppContext } from "../app-context.tsx";
 import { useEffectAction } from "../effect-hooks.ts";
 import { documentHref } from "../ui.ts";
-import { Button } from "./button.tsx";
 
 export interface AllocateRfcButtonProps {
   readonly api: ApiClientService;
@@ -29,7 +29,8 @@ export function AllocateRfcButton({
   return (
     <Button
       data-allocate-rfc=""
-      disabled={allocation.state.pending}
+      hierarchy="tertiary"
+      pending={allocation.state.pending}
       onClick={() =>
         allocation.execute(undefined, {
           onFailure: (error) => showToast(error.message, "error"),
@@ -41,7 +42,6 @@ export function AllocateRfcButton({
           },
         })
       }
-      variant="toolbar"
     >
       {allocation.state.pending ? "Allocating…" : "Allocate RFC"}
     </Button>

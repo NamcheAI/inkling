@@ -1,0 +1,11 @@
+/*
+ * One stylesheet, so the layer order is declared before any layer however the
+ * build splits chunks. Component CSS Modules are unlayered and win over Elanor's
+ * styles. Tokens are not bundled: index.html links /tokens.css (Elanor's
+ * `earendil` brand tokens and Inkling's domain tokens, see tokens.css) before
+ * the deployment theme, which overrides them.
+ */
+@layer reset, elanor;
+
+@import "./base.css" layer(reset);
+@import "@earendil-works/elanor-react/elanor.min.css";

@@ -1,5 +1,7 @@
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 
+import { CloseIcon } from "@earendil-works/elanor-icons-react";
+import { Button, IconButton, InlineCode, KeyboardKey, Search } from "@earendil-works/elanor-react";
 import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService } from "../api.ts";
@@ -105,60 +107,60 @@ export function DocumentSearch({
         if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
       }}
     >
-      <label className={styles["label"]} htmlFor={inputId}>
-        Search Inkling
-      </label>
-      <div className={styles["control"]}>
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <circle cx="10.5" cy="10.5" r="6.5" />
-          <path d="m15.5 15.5 5 5" />
-        </svg>
-        <input
-          aria-autocomplete="list"
-          aria-controls={panelId}
-          aria-expanded={panelOpen}
-          aria-haspopup="dialog"
-          autoComplete="off"
-          data-search=""
-          id={inputId}
-          inputMode="search"
-          maxLength={500}
-          onChange={(event) => updateQuery(event.currentTarget.value)}
-          onFocus={() => setFocused(true)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              setFocused(false);
-              return;
-            }
-            if (event.key === "Tab" && completions[0] !== undefined) {
-              event.preventDefault();
-              completeSearch(completions[0]);
-              return;
-            }
-            if (event.key === "Enter") {
-              event.preventDefault();
-              setFocused(false);
-            }
-          }}
-          placeholder={
-            publicCatalog
-              ? "Search published documents"
-              : "Search text, or try label:platform -state:abandoned"
+      <Search
+        aria-autocomplete="list"
+        aria-controls={panelId}
+        aria-expanded={panelOpen}
+        aria-haspopup="dialog"
+        aria-label="Search Inkling"
+        autoComplete="off"
+        data-search=""
+        endAdornment={
+          query === "" ? (
+            <KeyboardKey aria-label="Keyboard shortcut">/</KeyboardKey>
+          ) : (
+            <IconButton
+              aria-label="Clear search"
+              onClick={() => {
+                updateQuery("");
+                inputRef.current?.focus();
+              }}
+            >
+              <CloseIcon />
+            </IconButton>
+          )
+        }
+        id={inputId}
+        inputMode="search"
+        maxLength={500}
+        onFocus={() => setFocused(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setFocused(false);
+            return;
           }
-          ref={inputRef}
-          role="combobox"
-          spellCheck={false}
-          type="search"
-          value={query}
-        />
-        {query === "" ? (
-          <kbd aria-label="Keyboard shortcut">/</kbd>
-        ) : (
-          <button aria-label="Clear search" onClick={() => updateQuery("")} type="button">
-            Clear
-          </button>
-        )}
-      </div>
+          if (event.key === "Tab" && completions[0] !== undefined) {
+            event.preventDefault();
+            completeSearch(completions[0]);
+            return;
+          }
+          if (event.key === "Enter") {
+            event.preventDefault();
+            setFocused(false);
+          }
+        }}
+        onValueChange={updateQuery}
+        placeholder={
+          publicCatalog
+            ? "Search published documents"
+            : "Search text, or try label:platform -state:abandoned"
+        }
+        ref={inputRef}
+        role="combobox"
+        rootClassName={styles["control"] ?? ""}
+        spellCheck={false}
+        value={query}
+      />
       {panelOpen ? (
         <div
           aria-label="Search suggestions"
@@ -169,31 +171,34 @@ export function DocumentSearch({
         >
           {completions.length === 0 ? null : (
             <div className={styles["completions"]} data-search-completions="">
-              <span>{query.trim() === "" ? "Search syntax" : "Complete query"}</span>
+              <span className={styles["panelLabel"]}>
+                {query.trim() === "" ? "Search syntax" : "Complete query"}
+              </span>
               <div>
                 {completions.map((completion) => (
-                  <button
+                  <Button
+                    density="compact"
+                    hierarchy="secondary"
                     key={completion.token}
                     onClick={() => completeSearch(completion)}
                     title={completion.description}
-                    type="button"
                   >
                     <code>{completion.token}</code>
                     <small>{completion.description}</small>
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
           )}
           {search.state.status === "failure" && !pending ? (
-            <p className={`${styles["message"]} ${styles["error"]}`} role="alert">
+            <p className={styles["error"]} role="alert">
               {search.state.error.message}
             </p>
           ) : null}
           {publicCatalog ? null : (
             <p className={styles["syntaxHint"]}>
-              Combine filters with spaces. Quote phrases. Prefix any term with <code>-</code> to
-              exclude it.
+              Combine filters with spaces. Quote phrases. Prefix any term with{" "}
+              <InlineCode>-</InlineCode> to exclude it.
             </p>
           )}
         </div>

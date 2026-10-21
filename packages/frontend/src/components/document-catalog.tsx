@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { DescriptionIcon } from "@earendil-works/elanor-icons-react";
+import { EmptyState } from "@earendil-works/elanor-react";
 import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
 import styles from "./document-catalog.module.css";
 import { DocumentCatalogRow } from "./document-catalog-row.tsx";
-import emptyStateStyles from "./empty-state.module.css";
 
 export interface DocumentCatalogProps {
   readonly catalog: CatalogResponse;
@@ -61,7 +62,12 @@ export function DocumentCatalog({
     const handleKeyboardSelection = (event: KeyboardEvent): void => {
       if (catalog.documents.length === 0 || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target;
-      if (target instanceof Element && target.closest("dialog, [popover]") !== null) return;
+      if (
+        target instanceof Element &&
+        target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [popover]') !== null
+      ) {
+        return;
+      }
       const editable = isEditableElement(target);
       const key = event.key.toLowerCase();
       const direction =
@@ -81,22 +87,28 @@ export function DocumentCatalog({
 
   if (catalog.documents.length === 0) {
     return (
-      <section className={styles["catalog"]} data-catalog="" aria-live="polite">
-        <div className={emptyStateStyles["root"]} data-empty-state="">
-          <span>Ø</span>
-          <h2>No notes or RFCs found.</h2>
-          <p>
-            {publicCatalog
-              ? "No public revisions have been published yet."
-              : "Create one or adjust the search."}
-          </p>
-        </div>
+      <section aria-live="polite" className={styles["empty"]} data-catalog="">
+        <EmptyState.Root data-empty-state="">
+          <EmptyState.Illustration>
+            <DescriptionIcon aria-hidden="true" className={styles["illustration"]} />
+          </EmptyState.Illustration>
+          <EmptyState.Body>
+            <EmptyState.Copy>
+              <EmptyState.Title level={2}>No notes or RFCs found.</EmptyState.Title>
+              <EmptyState.Description>
+                {publicCatalog
+                  ? "No public revisions have been published yet."
+                  : "Create one or adjust the search."}
+              </EmptyState.Description>
+            </EmptyState.Copy>
+          </EmptyState.Body>
+        </EmptyState.Root>
       </section>
     );
   }
 
   return (
-    <section className={styles["catalog"]} data-catalog="" aria-live="polite">
+    <section aria-live="polite" className={styles["catalog"]} data-catalog="">
       {catalog.documents.map((document) => (
         <DocumentCatalogRow
           document={document}

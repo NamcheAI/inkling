@@ -65,6 +65,8 @@ export interface EditorCommentsProps {
   readonly canComment: boolean;
   readonly canManage: boolean;
   readonly comments: CommentStateDto;
+  /** The toolbar button the comment controls open from. */
+  readonly controlsAnchorRef: React.RefObject<HTMLElement | null>;
   readonly documentId: string;
   readonly onCommentsChange: (comments: CommentStateDto) => void;
   readonly previewRef: React.RefObject<HTMLElement | null>;
@@ -81,6 +83,7 @@ export function EditorComments({
   canComment,
   canManage,
   comments,
+  controlsAnchorRef,
   documentId,
   onCommentsChange,
   previewRef,
@@ -304,6 +307,7 @@ export function EditorComments({
   return (
     <>
       <CommentControls
+        anchorRef={controlsAnchorRef}
         onShowResolvedChange={setShowResolved}
         orphaned={orphaned}
         ref={controlsRef}
@@ -315,6 +319,7 @@ export function EditorComments({
         aria-label="New comment"
         className={styles["composerPopover"]}
         data-comment-composer-popover=""
+        onClose={() => setComposer((current) => (current?.kind === "create" ? undefined : current))}
         open={createRequest !== undefined}
       >
         {createRequest === undefined ? null : (

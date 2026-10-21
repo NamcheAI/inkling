@@ -1,6 +1,21 @@
 import { useEffect, useState } from "react";
 import { Effect } from "effect";
 
+import { ShareIcon } from "@earendil-works/elanor-icons-react";
+import {
+  Button,
+  Checkbox,
+  ControlAndLabel,
+  Fieldset,
+  Form,
+  Heading,
+  Input,
+  Radio,
+  SelectionControlAndLabel,
+  Separator,
+  Stack,
+  Text,
+} from "@earendil-works/elanor-react";
 import type {
   ShareLinkDto,
   ShareLinksResponse,
@@ -12,14 +27,9 @@ import { useAppContext } from "../app-context.tsx";
 import { useEffectAction, useEffectQuery } from "../effect-hooks.ts";
 import { browserRuntime } from "../effect-runtime.ts";
 import { formatDate } from "../ui.ts";
-import { Button } from "./button.tsx";
-import { CheckboxField } from "./checkbox-field.tsx";
-import { DialogHeader } from "./dialog-header.tsx";
+import { Dialog } from "./dialog.tsx";
 import { FormError } from "./form-error.tsx";
-import { ModalDialog } from "./modal-dialog.tsx";
-import { SelectField } from "./select-field.tsx";
 import styles from "./sharing-control.module.css";
-import { TextField } from "./text-field.tsx";
 
 type ShareAccess = "view" | "comment" | "edit";
 type ShareAction =
@@ -29,6 +39,12 @@ type ShareAction =
       readonly type: "create";
     }
   | { readonly id: string; readonly type: "delete" };
+
+const accessOptions: readonly { readonly label: string; readonly value: ShareAccess }[] = [
+  { label: "View", value: "view" },
+  { label: "View and comment", value: "comment" },
+  { label: "View, comment, and edit", value: "edit" },
+];
 
 export interface SharingControlProps {
   readonly access: SharingPolicyDto["access"];
@@ -77,9 +93,6 @@ export function SharingControl({
     (link) => link.access === selectedAccess && link.passwordProtected === passwordProtected,
   );
   const pending = shareAction.state.pending;
-  const dismiss = (): void => {
-    if (!pending) setOpen(false);
-  };
   const applyResponse = (response: ShareLinksResponse): void => {
     onUpdated(response);
     linksQuery.refresh();
@@ -87,137 +100,168 @@ export function SharingControl({
 
   return (
     <>
-      <Button variant="toolbar" data-share="" onClick={() => setOpen(true)}>
+      <Button
+        data-share=""
+        hierarchy="tertiary"
+        iconStart={<ShareIcon />}
+        onClick={() => setOpen(true)}
+      >
         Share
       </Button>
-      <ModalDialog
-        aria-labelledby="sharing-dialog-title"
-        className={styles["dialog"]}
-        onDismiss={dismiss}
+      <Dialog
+        closeLabel="Close sharing settings"
+        description="Links grant access to the working draft without a workspace account."
+        onClose={() => setOpen(false)}
         open={open}
-        preventDismiss={pending}
+        pending={pending}
+        title="Share document"
       >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (duplicateConfiguration || (passwordProtected && password.length < 8)) return;
-            const previousIds = new Set(links.map((link) => link.id));
-            shareAction.execute(
-              {
-                access: selectedAccess,
-                password: passwordProtected ? password : undefined,
-                type: "create",
-              },
-              {
-                onSuccess: (response) => {
-                  applyResponse(response);
-                  const created = response.links.find((link) => !previousIds.has(link.id));
-                  if (created?.url !== undefined) copyShareUrl(created.url);
-                  setPassword("");
-                  showToast("Share link created and copied.", "success");
-                },
-              },
-            );
-          }}
-        >
-          <DialogHeader
-            closeLabel="Close sharing settings"
-            disabled={pending}
-            eyebrow="Capability access"
-            onClose={dismiss}
-            title="Share document"
-            titleId="sharing-dialog-title"
-          />
-
-          <section className={styles["linkList"]} aria-labelledby="share-link-list-title">
-            <div className={styles["listHeading"]}>
-              <h3 id="share-link-list-title">Active links</h3>
-              <span>{links.length}</span>
-            </div>
+        <Stack align="stretch" gap="large">
+          <section aria-labelledby="share-link-list-title" className={styles["section"]}>
+            <Stack align="center" direction="row" gap="auto">
+              <Heading id="share-link-list-title" level={3}>
+                Active links
+              </Heading>
+              <span className={styles["count"]}>{links.length}</span>
+            </Stack>
             {linksQuery.state.status === "loading" && links.length === 0 ? (
-              <p className={styles["listEmpty"]}>Loading share links…</p>
+              <Text className={styles["note"]}>Loading share links…</Text>
             ) : links.length === 0 ? (
-              <p className={styles["listEmpty"]}>This document has no share links.</p>
+              <Text className={styles["note"]}>This document has no share links.</Text>
             ) : (
-              links.map((link) => (
-                <ShareLinkRow
-                  disabled={pending}
-                  key={link.id}
-                  link={link}
-                  onCopy={(url) => {
-                    copyShareUrl(url);
-                    showToast("Share link copied.", "success");
-                  }}
-                  onDelete={(id) =>
-                    shareAction.execute(
-                      { id, type: "delete" },
-                      {
-                        onSuccess: (response) => {
-                          applyResponse(response);
-                          showToast("Share link deleted.", "success");
+              <ul className={styles["links"]}>
+                {links.map((link) => (
+                  <ShareLinkRow
+                    disabled={pending}
+                    key={link.id}
+                    link={link}
+                    onCopy={(url) => {
+                      copyShareUrl(url);
+                      showToast("Share link copied.", "success");
+                    }}
+                    onDelete={(id) =>
+                      shareAction.execute(
+                        { id, type: "delete" },
+                        {
+                          onSuccess: (response) => {
+                            applyResponse(response);
+                            showToast("Share link deleted.", "success");
+                          },
                         },
-                      },
-                    )
-                  }
-                />
-              ))
+                      )
+                    }
+                  />
+                ))}
+              </ul>
             )}
             {linksQuery.state.status === "failure" ? (
               <FormError>{linksQuery.state.error.message}</FormError>
             ) : null}
           </section>
 
-          <section className={styles["linkCreate"]} aria-labelledby="share-link-create-title">
-            <h3 id="share-link-create-title">Create a link</h3>
-            <SelectField
-              label="Anyone with this link can"
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                if (isShareAccess(value)) setSelectedAccess(value);
-              }}
-              value={selectedAccess}
+          <Separator />
+
+          <Form
+            aria-labelledby="share-link-create-title"
+            className={styles["section"]}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (duplicateConfiguration || (passwordProtected && password.length < 8)) return;
+              const previousIds = new Set(links.map((link) => link.id));
+              shareAction.execute(
+                {
+                  access: selectedAccess,
+                  password: passwordProtected ? password : undefined,
+                  type: "create",
+                },
+                {
+                  onSuccess: (response) => {
+                    applyResponse(response);
+                    const created = response.links.find((link) => !previousIds.has(link.id));
+                    if (created?.url !== undefined) copyShareUrl(created.url);
+                    setPassword("");
+                    showToast("Share link created and copied.", "success");
+                  },
+                },
+              );
+            }}
+          >
+            <Heading id="share-link-create-title" level={3}>
+              Create a link
+            </Heading>
+            <Fieldset.Root
+              render={
+                <Radio.Group
+                  onValueChange={(value) => {
+                    if (isShareAccess(value)) setSelectedAccess(value);
+                  }}
+                  value={selectedAccess}
+                />
+              }
             >
-              <option value="view">View</option>
-              <option value="comment">View and comment</option>
-              <option value="edit">View, comment, and edit</option>
-            </SelectField>
-            <CheckboxField
-              checked={passwordProtected}
-              label="Require a password"
-              onChange={(event) => setPasswordProtected(event.currentTarget.checked)}
-            />
+              <Fieldset.Legend>Anyone with this link can</Fieldset.Legend>
+              <Stack gap="small">
+                {accessOptions.map((option) => (
+                  <SelectionControlAndLabel
+                    control={
+                      <Radio.Root value={option.value}>
+                        <Radio.Indicator />
+                      </Radio.Root>
+                    }
+                    key={option.value}
+                  >
+                    {option.label}
+                  </SelectionControlAndLabel>
+                ))}
+              </Stack>
+            </Fieldset.Root>
+            <SelectionControlAndLabel
+              control={
+                <Checkbox.Root checked={passwordProtected} onCheckedChange={setPasswordProtected}>
+                  <Checkbox.Indicator />
+                </Checkbox.Root>
+              }
+            >
+              Require a password
+            </SelectionControlAndLabel>
             {passwordProtected ? (
-              <TextField
-                autoComplete="new-password"
+              <ControlAndLabel
+                description="At least eight characters."
+                error="Enter at least eight characters."
                 label="Password"
-                minLength={8}
-                onChange={(event) => setPassword(event.currentTarget.value)}
-                required
-                type="password"
-                value={password}
-              />
+              >
+                <Input
+                  autoComplete="new-password"
+                  minLength={8}
+                  onValueChange={setPassword}
+                  required
+                  type="password"
+                  value={password}
+                />
+              </ControlAndLabel>
             ) : null}
             {duplicateConfiguration ? (
-              <p className={styles["note"]} data-share-duplicate="">
+              <Text className={styles["note"]} data-share-duplicate="">
                 A link with this access and protection already exists.
-              </p>
+              </Text>
             ) : null}
-            <Button
-              disabled={
-                pending ||
-                linksQuery.state.status === "loading" ||
-                duplicateConfiguration ||
-                (passwordProtected && password.length < 8)
-              }
-              type="submit"
-              variant="primary"
-            >
-              {pending ? "Updating…" : "Create and copy link"}
-            </Button>
-          </section>
-          <FormError>{shareAction.state.error?.message}</FormError>
-        </form>
-      </ModalDialog>
+            <FormError>{shareAction.state.error?.message}</FormError>
+            <div>
+              <Button
+                disabled={
+                  linksQuery.state.status === "loading" ||
+                  duplicateConfiguration ||
+                  (passwordProtected && password.length < 8)
+                }
+                pending={pending}
+                type="submit"
+              >
+                Create and copy link
+              </Button>
+            </div>
+          </Form>
+        </Stack>
+      </Dialog>
     </>
   );
 }
@@ -233,40 +277,45 @@ function ShareLinkRow({
   readonly onCopy: (url: string) => void;
   readonly onDelete: (id: string) => void;
 }): React.JSX.Element {
+  const label = accessLabel(link.access);
   return (
-    <div className={styles["linkRow"]} data-share-link={link.id}>
-      <span>
-        <b>{accessLabel(link.access)}</b>
-        <small>
+    <li className={styles["link"]} data-share-link={link.id}>
+      <Stack gap="xxSmall">
+        <strong className={styles["linkLabel"]}>{label}</strong>
+        <Text className={styles["meta"]}>
           {link.passwordProtected ? "Password protected" : "No password"} · Created{" "}
           {formatDate(link.createdAt)}
-        </small>
+        </Text>
         {link.url === undefined ? (
-          <small>Created before retained links; its URL cannot be shown again.</small>
+          <Text className={styles["meta"]}>
+            Created before retained links; its URL cannot be shown again.
+          </Text>
         ) : null}
-      </span>
-      <div className={styles["rowActions"]}>
+      </Stack>
+      <Stack direction="row" gap="xSmall">
         {link.url === undefined ? null : (
           <Button
-            aria-label={`Copy ${accessLabel(link.access).toLocaleLowerCase("en")} share link`}
+            aria-label={`Copy ${label.toLocaleLowerCase("en")} share link`}
+            density="compact"
             disabled={disabled}
+            hierarchy="secondary"
             onClick={() => onCopy(link.url ?? "")}
-            variant="text"
           >
             Copy
           </Button>
         )}
         <Button
-          aria-label={`Delete ${accessLabel(link.access).toLocaleLowerCase("en")} share link`}
-          className={styles["delete"]}
+          aria-label={`Delete ${label.toLocaleLowerCase("en")} share link`}
+          density="compact"
           disabled={disabled}
+          hierarchy="tertiary"
           onClick={() => onDelete(link.id)}
-          variant="text"
+          semantic="negative"
         >
           Delete
         </Button>
-      </div>
-    </div>
+      </Stack>
+    </li>
   );
 }
 
@@ -290,6 +339,6 @@ function accessLabel(access: ShareAccess): string {
   }
 }
 
-function isShareAccess(value: string): value is ShareAccess {
+function isShareAccess(value: unknown): value is ShareAccess {
   return value === "view" || value === "comment" || value === "edit";
 }

@@ -1,7 +1,9 @@
 import { useState } from "react";
 
+import { AddIcon } from "@earendil-works/elanor-icons-react";
+import { Button } from "@earendil-works/elanor-react";
+
 import type { ApiClientService } from "../api.ts";
-import { Button } from "./button.tsx";
 import { NewDocumentDialog } from "./new-document-dialog.tsx";
 
 export interface NewDocumentControlProps {
@@ -13,7 +15,7 @@ export function NewDocumentControl({ api }: NewDocumentControlProps): React.JSX.
 
   return (
     <>
-      <Button variant="primary" data-new-document="" onClick={() => setOpen(true)}>
+      <Button data-new-document="" iconStart={<AddIcon />} onClick={() => setOpen(true)}>
         New note or RFC
       </Button>
       <NewDocumentDialog api={api} onDismiss={() => setOpen(false)} open={open} />

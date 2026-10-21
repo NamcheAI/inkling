@@ -10,5 +10,5 @@
     "import/no-cycle": "error",
     "typescript/consistent-type-imports": "error"
   },
-  "ignorePatterns": ["**/dist/**", "**/coverage/**"]
+  "ignorePatterns": ["**/dist/**", "**/coverage/**", "vendor/**"]
 }

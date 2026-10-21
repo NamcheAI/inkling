@@ -1,21 +1,25 @@
+/* A fixed-height workbench; Layout.Main would otherwise grow with its content. */
 .layout {
   position: relative;
   display: grid;
+  flex: none;
   height: calc(100dvh - var(--masthead-height));
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
 
 .bar {
-  z-index: 5;
+  z-index: var(--semantic-number-layer-raised);
   display: flex;
-  min-width: 0;
+  min-inline-size: 0;
   align-items: center;
   justify-content: flex-end;
-  gap: 1.5rem;
-  padding: 0.8rem var(--page-padding);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  gap: var(--semantic-dimension-space-gap-large);
+  padding-block: var(--semantic-dimension-space-padding-medium);
+  padding-inline: var(--page-padding);
+  border-block-end: var(--semantic-dimension-border-width-small) solid
+    var(--semantic-color-border-secondary);
+  background: var(--semantic-color-background-canvas);
 }
 
 .trashedBar {
@@ -24,35 +28,31 @@
 
 .trashIndicator {
   display: flex;
-  min-width: 0;
+  min-inline-size: 0;
   align-items: baseline;
-  gap: 0.65rem;
+  gap: var(--semantic-dimension-space-gap-small);
   margin: 0;
-  color: var(--muted);
-  font: var(--font-caption) / 1.3 var(--sans);
+  color: var(--semantic-color-text-secondary);
+  font: var(--semantic-typography-ui-secondary);
 }
 
 .trashIndicator a {
   flex: none;
-  color: var(--danger);
-  font: 600 var(--font-caption) / 1 var(--mono);
-  letter-spacing: 0.08em;
+  color: var(--semantic-color-text-negative);
+  font: var(--semantic-typography-ui-label);
   text-decoration: none;
-  text-transform: uppercase;
 }
 
 .trashIndicator a:hover {
   text-decoration: underline;
-  text-decoration-style: dotted;
-  text-underline-offset: 0.16em;
+  text-underline-offset: 0.2em;
 }
 
 .actions {
   display: flex;
   flex: none;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.45rem;
+  gap: var(--semantic-dimension-space-gap-x-small);
 }
 
 .previewToggle {
@@ -60,78 +60,41 @@
 }
 
 .attachment {
-  display: inline-flex;
-  min-height: 2.05rem;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--surface);
-  color: var(--muted);
-  cursor: pointer;
-  font: var(--font-caption) var(--mono);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  position: relative;
 }
 
-.attachment:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-muted);
-  color: var(--text);
-}
-
-.attachment input {
+.attachmentInput {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  inline-size: 1px;
+  block-size: 1px;
   opacity: 0;
   pointer-events: none;
 }
 
-.attachment:has(input:focus-visible) {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.attachment:has(input:disabled) {
-  cursor: not-allowed;
-  opacity: 0.48;
-}
-
 .commentCount {
-  min-width: 1.15rem;
-  padding: 0.05rem 0.3rem;
-  border-radius: 1rem;
-  background: var(--surface-muted);
-  color: var(--text);
+  min-inline-size: var(--semantic-dimension-size-x-small);
+  padding-inline: var(--semantic-dimension-space-padding-xx-small);
+  border-radius: var(--semantic-dimension-radius-full);
+  background: var(--semantic-color-background-fill-secondary);
+  color: var(--semantic-color-text-primary);
+  font: var(--semantic-typography-ui-tertiary);
   text-align: center;
-}
-
-.modeLink {
-  justify-content: center;
-  text-decoration: none;
-}
-
-.delete {
-  color: var(--danger);
 }
 
 .workbench {
   display: grid;
-  min-width: 0;
-  min-height: 0;
+  min-inline-size: 0;
+  min-block-size: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  background: var(--surface);
+  background: var(--semantic-color-background-canvas);
 }
 
 .sourcePane,
 .previewPane {
   display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-template-rows: 2.35rem minmax(0, 1fr);
+  min-inline-size: 0;
+  min-block-size: 0;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -140,22 +103,24 @@
 }
 
 .previewPane {
-  border-left: 1px solid var(--border);
-  background: var(--page);
+  border-inline-start: var(--semantic-dimension-border-width-small) solid
+    var(--semantic-color-border-secondary);
+  background: var(--semantic-color-background-canvas);
 }
 
 .paneLabel {
   display: flex;
-  min-width: 0;
+  min-inline-size: 0;
+  min-block-size: var(--semantic-dimension-size-large);
   align-items: center;
   justify-content: space-between;
-  padding: 0 1rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-muted);
-  color: var(--muted);
-  font: var(--font-caption) / 1.3 var(--mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  gap: var(--semantic-dimension-space-gap-small);
+  padding-inline: var(--semantic-dimension-space-padding-x-large)
+    var(--semantic-dimension-space-padding-small);
+  border-block-end: var(--semantic-dimension-border-width-small) solid
+    var(--semantic-color-border-secondary);
+  color: var(--semantic-color-text-secondary);
+  font: var(--semantic-typography-ui-secondary);
 }
 
 .closePreview {
@@ -163,41 +128,39 @@
 }
 
 .previewPage {
-  min-width: 0;
-  min-height: 0;
-  padding: 1rem;
+  min-inline-size: 0;
+  min-block-size: 0;
   overflow: auto;
 }
 
 .previewPaper {
-  width: min(100%, 72rem);
-  min-height: 100%;
-  margin: 0 auto;
-  padding: 1.25rem;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  box-shadow: 0 8px 24px var(--shadow-soft);
+  inline-size: min(100%, 60rem);
+  min-block-size: 100%;
+  margin-inline: auto;
+  padding: var(--semantic-dimension-space-padding-xxx-large);
 }
 
 .editorHost,
 .editorHost > :global(.cm-editor) {
-  min-height: 0;
-  height: 100%;
+  min-block-size: 0;
+  block-size: 100%;
 }
 
 .editorHost :global(.cm-editor) {
   background: var(--editor-background);
-  color: var(--text);
-  font-size: 0.95rem;
+  color: var(--semantic-color-text-primary);
 }
 
 .editorHost :global(.cm-scroller) {
-  font-family: var(--mono);
+  font: var(--semantic-typography-code-primary);
   line-height: 1.65;
 }
 
 .editorHost :global(.cm-content) {
-  padding: 0.75rem 1rem 2rem;
+  padding: var(--semantic-dimension-space-padding-large)
+    var(--semantic-dimension-space-padding-x-large)
+    var(--semantic-dimension-space-padding-xxx-large);
+  caret-color: var(--semantic-color-text-primary);
 }
 
 .editorHost :global(.cm-line) {
@@ -206,9 +169,6 @@
 
 .editorHost :global(.cm-gutters) {
   display: none;
-  border: 0;
-  background: var(--transparent);
-  color: var(--muted);
 }
 
 .editorHost :global(.cm-activeLine),
@@ -218,30 +178,44 @@
 
 .editorHost :global(.cm-cursor),
 .editorHost :global(.cm-dropCursor) {
-  border-left-color: var(--text);
+  border-inline-start-color: var(--semantic-color-text-primary);
 }
 
 .editorHost :global(.cm-selectionBackground),
 .editorHost :global(.cm-content ::selection) {
-  background: color-mix(in oklch, var(--accent) 24%, var(--transparent)) !important;
+  background: color-mix(
+    in oklch,
+    var(--semantic-color-focus-ring) 28%,
+    var(--editor-background)
+  ) !important;
 }
 
 .editorHost :global(.cm-panels),
 .editorHost :global(.cm-tooltip) {
-  border-color: var(--border);
-  background: var(--surface);
-  color: var(--text);
+  border: 0;
+  border-radius: var(--semantic-dimension-radius-small);
+  box-shadow: var(--semantic-shadow-popup);
+  background: var(--semantic-color-background-canvas);
+  color: var(--semantic-color-text-primary);
+  font: var(--semantic-typography-ui-secondary);
+}
+
+.editorHost :global(.cm-panels) {
+  border-radius: 0;
+  box-shadow: none;
+  border-block-start: var(--semantic-dimension-border-width-small) solid
+    var(--semantic-color-border-secondary);
 }
 
 .editorHost :global(.cm-tooltip-autocomplete > ul > li[aria-selected]) {
-  background: var(--accent-soft);
-  color: var(--text);
+  background: var(--semantic-color-background-fill-ghost-neutral-hover);
+  color: var(--semantic-color-text-primary);
 }
 
 .editorHost :global(.cm-completionDetail),
 .editorHost :global(.cm-completionInfo),
 .editorHost :global(.cm-placeholder) {
-  color: var(--muted);
+  color: var(--semantic-color-text-secondary);
 }
 
 .editorHost :global(.cm-completionIcon) {
@@ -265,23 +239,34 @@
 }
 
 .editorHost :global(.cm-button),
-.editorHost :global(.cm-textfield),
-.editorHost :global(.cm-foldPlaceholder) {
-  border-color: var(--border);
-  background: var(--surface-muted);
+.editorHost :global(.cm-textfield) {
+  border: 0;
+  border-radius: var(--semantic-dimension-radius-small);
+  background: var(--semantic-color-background-fill-secondary);
   background-image: none;
-  color: var(--text);
+  color: var(--semantic-color-text-primary);
+  font: var(--semantic-typography-ui-secondary);
+}
+
+.editorHost :global(.cm-foldPlaceholder) {
+  border: 0;
+  background: var(--semantic-color-background-fill-secondary);
+  color: var(--semantic-color-text-secondary);
 }
 
 .editorHost :global(.cm-matchingBracket),
 .editorHost :global(.cm-searchMatch),
 .editorHost :global(.cm-selectionMatch) {
-  background: var(--accent-soft);
-  color: var(--text);
+  background: var(--semantic-color-background-fill-secondary-information);
+  color: var(--semantic-color-text-primary);
 }
 
 .editorHost :global(.cm-searchMatch.cm-searchMatch-selected) {
-  outline-color: var(--focus-ring);
+  outline: var(--semantic-dimension-border-width-small) solid var(--semantic-color-focus-ring);
+}
+
+.editorHost :global(.cm-editor.cm-focused) {
+  outline: 0;
 }
 
 .historyChangedLine {
@@ -289,85 +274,89 @@
 }
 
 .historyChangedPreview {
+  border-radius: var(--semantic-dimension-radius-small);
   animation: history-preview-pulse 1.3s ease-out both;
-  border-radius: 2px;
 }
 
 @keyframes history-source-pulse {
   0%,
   24% {
-    background: color-mix(in oklch, var(--accent) 28%, var(--transparent));
-    box-shadow: inset 3px 0 var(--accent);
+    background: var(--semantic-color-background-fill-secondary-information);
+    box-shadow: inset var(--semantic-dimension-border-width-large) 0
+      var(--semantic-color-border-information);
   }
 
   100% {
-    background: var(--transparent);
-    box-shadow: inset 3px 0 var(--transparent);
+    background: var(--semantic-color-background-fill-ghost);
+    box-shadow: inset var(--semantic-dimension-border-width-large) 0
+      var(--semantic-color-background-fill-ghost);
   }
 }
 
 @keyframes history-preview-pulse {
   0%,
   24% {
-    background-color: color-mix(in oklch, var(--accent) 20%, var(--transparent));
-    box-shadow: -4px 0 var(--accent);
+    background-color: var(--semantic-color-background-fill-secondary-information);
+    box-shadow: calc(-1 * var(--semantic-dimension-space-gap-x-small)) 0
+      var(--semantic-color-border-information);
   }
 
   100% {
-    background-color: var(--transparent);
-    box-shadow: -4px 0 var(--transparent);
+    background-color: var(--semantic-color-background-fill-ghost);
+    box-shadow: calc(-1 * var(--semantic-dimension-space-gap-x-small)) 0
+      var(--semantic-color-background-fill-ghost);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .historyChangedLine {
     animation: none;
-    background: color-mix(in oklch, var(--accent) 22%, var(--transparent));
-    box-shadow: inset 3px 0 var(--accent);
+    background: var(--semantic-color-background-fill-secondary-information);
+    box-shadow: inset var(--semantic-dimension-border-width-large) 0
+      var(--semantic-color-border-information);
   }
 
   .historyChangedPreview {
     animation: none;
-    background-color: color-mix(in oklch, var(--accent) 16%, var(--transparent));
-    box-shadow: -4px 0 var(--accent);
+    background-color: var(--semantic-color-background-fill-secondary-information);
+    box-shadow: calc(-1 * var(--semantic-dimension-space-gap-x-small)) 0
+      var(--semantic-color-border-information);
   }
 }
 
-.editorHost :global(.cm-editor.cm-focused) {
-  outline: 0;
-}
-
 .remoteSelection {
-  border-radius: 2px;
-  background: color-mix(in oklch, var(--remote-color) 28%, var(--transparent));
-  box-shadow: inset 0 -1px color-mix(in oklch, var(--remote-color) 72%, var(--transparent));
+  border-radius: var(--semantic-dimension-radius-small);
+  background: color-mix(in oklch, var(--remote-color) 28%, var(--editor-background));
+  box-shadow: inset 0 calc(-1 * var(--semantic-dimension-border-width-small)) var(--remote-color);
 }
 
 .remoteCursor {
   position: relative;
   display: inline;
   margin-inline: -1px;
-  border-left: 2px solid var(--remote-color);
+  border-inline-start: var(--semantic-dimension-border-width-medium) solid var(--remote-color);
   pointer-events: none;
 }
 
 .remoteCursorLabel {
   position: absolute;
-  z-index: 20;
-  bottom: calc(100% + 0.2rem);
-  left: -2px;
-  padding: 0.2rem 0.35rem;
-  border-radius: 2px 2px 2px 0;
+  z-index: var(--semantic-number-layer-floating);
+  inset-block-end: calc(100% + var(--semantic-dimension-space-gap-xx-small));
+  inset-inline-start: calc(-1 * var(--semantic-dimension-border-width-medium));
+  padding: var(--semantic-dimension-space-padding-xxx-small)
+    var(--semantic-dimension-space-padding-x-small);
+  border-radius: var(--semantic-dimension-radius-small) var(--semantic-dimension-radius-small)
+    var(--semantic-dimension-radius-small) 0;
+  box-shadow: var(--semantic-shadow-popup);
   background: var(--remote-color);
-  box-shadow: 0 2px 8px var(--shadow-strong);
   color: var(--participant-text);
-  font: 650 var(--font-caption) / 1.15 var(--mono);
+  font: var(--semantic-typography-ui-tertiary);
   white-space: nowrap;
 }
 
 .readerMode {
   height: auto;
-  min-height: calc(100dvh - var(--masthead-height));
+  min-block-size: calc(100dvh - var(--masthead-height));
   overflow: visible;
 }
 
@@ -385,43 +374,28 @@
 
 .readerMode .previewPane {
   display: block;
-  min-height: calc(100dvh - 8rem);
+  min-block-size: calc(100dvh - 8rem);
   overflow: visible;
-  border-left: 0;
-  background: var(--surface);
+  border-inline-start: 0;
 }
 
 @media (width <= 68rem) {
   .bar {
     align-items: flex-start;
     flex-direction: column;
-    gap: 0.65rem;
+    gap: var(--semantic-dimension-space-gap-small);
   }
 
   .actions {
-    width: 100%;
+    inline-size: 100%;
     justify-content: flex-start;
   }
 }
 
 @media (width <= 52rem) {
-  .layout {
-    height: calc(100dvh - var(--masthead-height));
-  }
-
   .actions {
     overflow-x: auto;
-    padding-bottom: 0.15rem;
-  }
-
-  .trashedBar {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 0.55rem;
-  }
-
-  .trashedBar .actions {
-    width: 100%;
+    padding-block-end: var(--semantic-dimension-space-padding-xx-small);
   }
 
   .previewToggle {
@@ -440,9 +414,9 @@
   }
 
   .previewPane {
-    z-index: 5;
+    z-index: var(--semantic-number-layer-raised);
     display: none;
-    border-left: 0;
+    border-inline-start: 0;
   }
 
   .previewOpen .previewPane {
@@ -450,7 +424,7 @@
   }
 
   .previewPane .closePreview {
-    display: inline-grid;
+    display: inline-flex;
   }
 
   .readerMode {
@@ -465,13 +439,7 @@
 }
 
 @media (width <= 34rem) {
-  .previewPage {
-    padding: 0;
-  }
-
   .previewPaper {
-    padding: 1rem;
-    border: 0;
-    box-shadow: none;
+    padding: var(--semantic-dimension-space-padding-x-large);
   }
 }

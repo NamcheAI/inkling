@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 
+import { DarkModeIcon, LightModeIcon } from "@earendil-works/elanor-icons-react";
+import { IconButton, Layout, TopNavigation } from "@earendil-works/elanor-react";
 import type { PresenceDto } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService } from "../api.ts";
 import type { AppStatus } from "../app-context.tsx";
 import { AccountControl } from "./account-control.tsx";
-import styles from "./app-header.module.css";
 import type { AccountControlProps } from "./account-control.tsx";
-import { Button } from "./button.tsx";
+import styles from "./app-header.module.css";
 import { ButtonLink } from "./button-link.tsx";
+import { applyColorScheme, currentColorScheme, syncThemeColor } from "./color-scheme.ts";
+import type { ColorScheme } from "./color-scheme.ts";
 
 export interface BreadcrumbItem {
   readonly href?: string | undefined;
@@ -32,124 +35,113 @@ export function AppHeader({
   participants,
   status,
 }: AppHeaderProps): React.JSX.Element {
-  const [theme, setTheme] = useState<"dark" | "light">(() =>
-    document.documentElement.dataset["theme"] === "dark" ? "dark" : "light",
-  );
+  const [scheme, setScheme] = useState<ColorScheme>(currentColorScheme);
 
   useEffect(() => {
-    document.documentElement.dataset["theme"] = theme;
-    document
-      .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-      ?.setAttribute(
-        "content",
-        getComputedStyle(document.documentElement).getPropertyValue("--page").trim(),
-      );
-  }, [theme]);
+    syncThemeColor();
+    const systemScheme = matchMedia("(prefers-color-scheme: dark)");
+    const followSystem = (): void => {
+      setScheme(currentColorScheme());
+      syncThemeColor();
+    };
+    systemScheme.addEventListener("change", followSystem);
+    return () => systemScheme.removeEventListener("change", followSystem);
+  }, []);
 
-  const toggleTheme = (): void => {
-    setTheme((current) => {
-      const next = current === "dark" ? "light" : "dark";
-      localStorage.setItem("inkling-theme", next);
-      return next;
-    });
+  const toggleScheme = (): void => {
+    const next = currentColorScheme() === "dark" ? "light" : "dark";
+    applyColorScheme(next, true);
+    setScheme(next);
   };
+  const nextScheme = scheme === "dark" ? "light" : "dark";
 
   return (
-    <header className={styles["masthead"]}>
-      <nav className={styles["breadcrumbs"]} aria-label="Breadcrumb" data-breadcrumbs="">
-        <ol>
-          {breadcrumbs.map((breadcrumb, index) => {
-            const current = index === breadcrumbs.length - 1;
-            const className = index === 0 ? styles["wordmark"] : styles["breadcrumbLabel"];
-            return (
-              <li
-                className={breadcrumb.truncate === true ? styles["truncate"] : undefined}
-                key={`${index}:${breadcrumb.label}`}
+    <Layout.Header className={styles["masthead"]} render={<TopNavigation.Root />}>
+      <TopNavigation.Identity className={styles["identity"]}>
+        <nav aria-label="Breadcrumb" className={styles["breadcrumbs"]} data-breadcrumbs="">
+          <ol>
+            {breadcrumbs.map((breadcrumb, index) => {
+              const current = index === breadcrumbs.length - 1;
+              const className = index === 0 ? styles["wordmark"] : styles["crumb"];
+              return (
+                <li
+                  className={breadcrumb.truncate === true ? styles["truncate"] : undefined}
+                  key={`${index}:${breadcrumb.label}`}
+                >
+                  {index === 0 ? null : (
+                    <span aria-hidden="true" className={styles["separator"]}>
+                      /
+                    </span>
+                  )}
+                  {breadcrumb.href === undefined ? (
+                    <span
+                      aria-current={current ? "page" : undefined}
+                      className={className}
+                      data-breadcrumb=""
+                      title={breadcrumb.truncate === true ? breadcrumb.label : undefined}
+                    >
+                      {breadcrumb.label}
+                    </span>
+                  ) : (
+                    <a
+                      aria-current={current ? "page" : undefined}
+                      aria-label={index === 0 ? "Inkling home" : undefined}
+                      className={className}
+                      data-breadcrumb=""
+                      href={breadcrumb.href}
+                      title={breadcrumb.truncate === true ? breadcrumb.label : undefined}
+                    >
+                      {breadcrumb.label}
+                    </a>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      </TopNavigation.Identity>
+      <TopNavigation.Actions className={styles["actions"]}>
+        {participants.length === 0 ? null : (
+          <div
+            aria-label="Connected participants"
+            className={styles["participants"]}
+            data-participants=""
+          >
+            {participants.map((participant) => (
+              <span
+                className={styles["participant"]}
+                key={participant.participantId}
+                style={{ "--participant": participant.color } as CSSProperties}
+                title={participant.displayName}
               >
-                {index === 0 ? null : (
-                  <span className={styles["separator"]} aria-hidden="true">
-                    /
-                  </span>
-                )}
-                {breadcrumb.href === undefined ? (
-                  <span
-                    aria-current={current ? "page" : undefined}
-                    className={className}
-                    data-breadcrumb=""
-                    title={breadcrumb.truncate === true ? breadcrumb.label : undefined}
-                  >
-                    {breadcrumb.label}
-                  </span>
-                ) : (
-                  <a
-                    aria-current={current ? "page" : undefined}
-                    aria-label={index === 0 ? "Inkling home" : undefined}
-                    className={className}
-                    data-breadcrumb=""
-                    href={breadcrumb.href}
-                    title={breadcrumb.truncate === true ? breadcrumb.label : undefined}
-                  >
-                    {breadcrumb.label}
-                  </a>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      </nav>
-      <div className={styles["right"]}>
-        <div
-          className={styles["participants"]}
-          data-participants=""
-          aria-label="Connected participants"
-        >
-          {participants.map((participant) => (
-            <span
-              className={styles["participant"]}
-              key={participant.participantId}
-              style={{ "--participant": participant.color } as CSSProperties}
-              title={participant.displayName}
-            >
-              {participant.displayName.slice(0, 1).toUpperCase()}
-            </span>
-          ))}
-        </div>
+                {participant.displayName.slice(0, 1).toUpperCase()}
+              </span>
+            ))}
+          </div>
+        )}
         {status === undefined ? null : (
-          <div className={styles["apiState"]} role="status" aria-live="polite">
-            <span className={styles["apiLight"]} aria-hidden="true" />
+          <div aria-live="polite" className={styles["status"]} role="status">
+            <span aria-hidden="true" className={styles["statusLight"]} />
             <span data-api-status="">{status.label}</span>
           </div>
         )}
-        <Button
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-          className={styles["themeToggle"]}
+        <IconButton
+          aria-label={`Switch to ${nextScheme} theme`}
           data-theme-toggle=""
           onClick={(event) => {
-            if (event.detail <= 1) toggleTheme();
+            if (event.detail <= 1) toggleScheme();
           }}
-          variant="icon"
         >
-          <svg aria-hidden="true" viewBox="0 0 16 16">
-            <path d="M8 1.75a6.25 6.25 0 0 0 0 12.5Z" fill="currentColor" />
-            <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
-        </Button>
-        {account === undefined ? (
-          api === undefined ? null : (
-            <ButtonLink
-              className={styles["signIn"]}
-              data-sign-in=""
-              href="/api/auth/google/start"
-              size="small"
-              variant="primary"
-            >
-              Sign in
-            </ButtonLink>
-          )
-        ) : api === undefined ? null : (
+          {scheme === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
+        </IconButton>
+        {api === undefined ? null : account === undefined ? (
+          <ButtonLink data-sign-in="" href="/api/auth/google/start">
+            Sign in
+          </ButtonLink>
+        ) : (
           <AccountControl account={account} api={api} />
         )}
-      </div>
-    </header>
+      </TopNavigation.Actions>
+    </Layout.Header>
   );
 }

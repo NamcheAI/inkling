@@ -1,9 +1,20 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button } from "./button.tsx";
+
+import { CloseIcon } from "@earendil-works/elanor-icons-react";
+import {
+  Button,
+  Field,
+  Form,
+  Heading,
+  IconButton,
+  KeyboardKey,
+  KeyboardShortcut,
+  Stack,
+  TextArea,
+} from "@earendil-works/elanor-react";
+
 import styles from "./comments.module.css";
-import { DialogHeader } from "./dialog-header.tsx";
-import { ModalDialog } from "./modal-dialog.tsx";
-import { TextareaField } from "./textarea-field.tsx";
+import { Dialog } from "./dialog.tsx";
 
 export interface CommentComposerProps {
   readonly initialBody?: string | undefined;
@@ -48,106 +59,102 @@ export function CommentComposer({
     onSubmit(value);
   };
 
-  const form = (
-    <form
-      aria-labelledby={titleId}
-      className={presentation === "inline" ? styles["inlineComposer"] : styles["composerForm"]}
-      data-comment-composer-form=""
-      data-comment-composer-inline={presentation === "inline" ? "" : undefined}
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      {presentation === "dialog" ? (
-        <DialogHeader
-          className={styles["composerHeading"]}
-          closeLabel="Cancel comment"
-          disabled={pending}
-          eyebrow="Discussion"
-          onClose={onCancel}
-          title={title}
-          titleDataAttributes={{ "data-comment-composer-title": "" }}
-          titleId={titleId}
-        />
-      ) : (
-        <div className={styles["inlineHeading"]}>
-          <div>
-            <p className={styles["eyebrow"]}>Discussion</p>
-            <h3 id={titleId}>{title}</h3>
-          </div>
-          <Button aria-label="Cancel comment" variant="icon" disabled={pending} onClick={onCancel}>
-            ×
-          </Button>
-        </div>
-      )}
+  const fields = (
+    <>
       {quote === undefined || quote.length === 0 ? null : (
-        <blockquote data-comment-composer-quote="">{quote}</blockquote>
+        <blockquote className={styles["quote"]} data-comment-composer-quote="">
+          {quote}
+        </blockquote>
       )}
-      <TextareaField
-        aria-invalid={invalid}
-        className={styles["composerField"]}
-        data-comment-body=""
-        error={invalid ? "Enter a comment before submitting." : undefined}
-        label="Comment"
-        maxLength={20_000}
-        onChange={(event) => {
-          setBody(event.currentTarget.value);
-          if (invalid) setInvalid(false);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-            event.preventDefault();
-            submit();
-          }
-        }}
-        placeholder="Write a clear, useful comment…"
-        ref={bodyRef}
-        required
-        rows={presentation === "inline" ? 3 : 7}
-        value={body}
-      />
+      <Field.Root invalid={invalid}>
+        <Field.Label>Comment</Field.Label>
+        <TextArea
+          className={styles["composerBody"]}
+          data-comment-body=""
+          maxLength={20_000}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              submit();
+            }
+          }}
+          onValueChange={(value) => {
+            setBody(value);
+            if (invalid) setInvalid(false);
+          }}
+          placeholder="Write a clear, useful comment…"
+          ref={bodyRef}
+          rows={presentation === "inline" ? 3 : 7}
+          value={body}
+        />
+        {invalid ? <Field.Error match>Enter a comment before submitting.</Field.Error> : null}
+      </Field.Root>
       <div className={styles["composerFooter"]}>
-        <span>
-          <kbd>⌘</kbd>
-          <kbd>Enter</kbd> to submit
+        <span className={styles["shortcut"]}>
+          <KeyboardShortcut>
+            <KeyboardKey>⌘</KeyboardKey>+<KeyboardKey>Enter</KeyboardKey>
+          </KeyboardShortcut>{" "}
+          to submit
         </span>
-        <div>
+        <Stack direction="row" gap="xSmall">
           <Button
-            variant="toolbar"
             data-comment-cancel=""
             disabled={pending}
+            hierarchy="secondary"
             onClick={onCancel}
-            type="button"
           >
             Cancel
           </Button>
-          <Button
-            size="small"
-            variant="primary"
-            data-comment-submit=""
-            disabled={pending}
-            type="submit"
-          >
-            {pending ? "Saving…" : submitLabel}
+          <Button data-comment-submit="" pending={pending} type="submit">
+            {submitLabel}
           </Button>
-        </div>
+        </Stack>
       </div>
-    </form>
+    </>
   );
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    submit();
+  };
 
-  return presentation === "inline" ? (
-    form
-  ) : (
-    <ModalDialog
+  if (presentation === "dialog") {
+    return (
+      <Dialog
+        attributes={{ "data-comment-composer-dialog": "" }}
+        closeLabel="Cancel comment"
+        onClose={onCancel}
+        open
+        pending={pending}
+        title={<span data-comment-composer-title="">{title}</span>}
+      >
+        <Form
+          className={styles["composerForm"]}
+          data-comment-composer-form=""
+          onSubmit={handleSubmit}
+        >
+          {fields}
+        </Form>
+      </Dialog>
+    );
+  }
+
+  return (
+    <Form
       aria-labelledby={titleId}
-      className={styles["composerDialog"]}
-      data-comment-composer-dialog=""
-      onDismiss={onCancel}
-      open
-      preventDismiss={pending}
+      className={styles["inlineComposer"]}
+      data-comment-composer-form=""
+      data-comment-composer-inline=""
+      onSubmit={handleSubmit}
     >
-      {form}
-    </ModalDialog>
+      <Stack align="start" direction="row" gap="auto">
+        <Heading id={titleId} level={3}>
+          {title}
+        </Heading>
+        <IconButton aria-label="Cancel comment" disabled={pending} onClick={onCancel}>
+          <CloseIcon />
+        </IconButton>
+      </Stack>
+      {fields}
+    </Form>
   );
 }

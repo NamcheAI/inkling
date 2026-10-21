@@ -1,3 +1,5 @@
+import { AttachFileIcon } from "@earendil-works/elanor-icons-react";
+import { Button } from "@earendil-works/elanor-react";
 import type { AttachmentMetadataDto } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService, ApiError } from "../api.ts";
@@ -26,10 +28,18 @@ export function AttachmentButton({
   );
 
   return (
-    <label className={styles["attachment"]}>
+    <Button
+      className={styles["attachment"]}
+      disabled={disabled || upload.state.pending}
+      hierarchy="tertiary"
+      iconStart={<AttachFileIcon />}
+      nativeButton={false}
+      render={<label />}
+    >
       {upload.state.pending ? "Uploading…" : "Attach"}
       <input
         accept={acceptedTypes}
+        className={styles["attachmentInput"]}
         data-attachment=""
         disabled={disabled || upload.state.pending}
         onChange={(event) => {
@@ -48,8 +58,9 @@ export function AttachmentButton({
             },
           });
         }}
+        tabIndex={-1}
         type="file"
       />
-    </label>
+    </Button>
   );
 }

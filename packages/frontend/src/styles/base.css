@@ -1,0 +1,52 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 20rem;
+  min-height: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--semantic-color-background-canvas);
+  scroll-padding-block-start: var(--masthead-height);
+}
+
+/* Base UI: lets dialog and drawer backdrops cover the whole screen on iOS Safari after scrolling. */
+body {
+  position: relative;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--semantic-color-background-canvas);
+  color: var(--semantic-color-text-primary);
+  font: var(--semantic-typography-ui-primary);
+}
+
+/* Portals render outside the application root, which isolates its stacking context. */
+#root {
+  isolation: isolate;
+}
+
+#app {
+  min-height: calc(100vh - var(--masthead-height));
+}
+
+::selection {
+  background: color-mix(
+    in oklch,
+    var(--semantic-color-focus-ring) 28%,
+    var(--semantic-color-background-canvas)
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

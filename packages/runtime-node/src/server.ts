@@ -12,6 +12,7 @@ import {
   createBackendApp,
   decodeThemeJson,
   findBundledTheme,
+  isDefaultThemeSelection,
   InklingApplication,
   ThemeError,
 } from "@earendil-works/inkling-backend";
@@ -130,11 +131,13 @@ export function startServer(
   }).pipe(Effect.provide(NodeFileSystem.layer));
 }
 
+/** Loads `INKLING_THEME`; the default selection keeps Elanor's own theme and yields no overrides. */
 export function loadTheme(
   selection: string | undefined,
   workingDirectory = process.cwd(),
-): Effect.Effect<ThemeConfiguration, ThemeError> {
+): Effect.Effect<ThemeConfiguration | undefined, ThemeError> {
   const value = selection?.trim() ?? "";
+  if (isDefaultThemeSelection(value)) return Effect.succeed(undefined);
   const bundled = findBundledTheme(value);
   if (bundled !== undefined) return Effect.succeed(bundled);
   if (value?.startsWith("{")) return decodeThemeJson(value);

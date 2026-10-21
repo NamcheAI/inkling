@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Effect } from "effect";
 
+import { CloseIcon, HistoryIcon } from "@earendil-works/elanor-icons-react";
+import { Button, IconButton, Popover, Stack } from "@earendil-works/elanor-react";
 import type { DocumentHistoryVersionDto, DocumentResponse } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService, ApiError } from "../api.ts";
@@ -9,7 +11,6 @@ import type { CollaborationClientError } from "../collaboration.ts";
 import { useEffectAction, useEffectQuery } from "../effect-hooks.ts";
 import { historyChangeRanges } from "../history-diff.ts";
 import type { HistoryChangeRange } from "../history-diff.ts";
-import { Button } from "./button.tsx";
 import { ConfirmationDialog } from "./confirmation-dialog.tsx";
 import { FormError } from "./form-error.tsx";
 import styles from "./history-control.module.css";
@@ -39,7 +40,6 @@ export function HistoryControl({
   onRestored,
 }: HistoryControlProps): React.JSX.Element {
   const { showToast } = useAppContext();
-  const detailsRef = useRef<HTMLDetailsElement>(null);
   const revisionCacheRef = useRef(new Map<number, DocumentResponse>());
   const [open, setOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -78,33 +78,12 @@ export function HistoryControl({
   const selected = versions[selectedIndex];
 
   useEffect(() => {
-    if (!open) return;
-    const closeFromOutside = (event: PointerEvent): void => {
-      const target = event.target;
-      if (target instanceof Element && target.closest("dialog") !== null) return;
-      if (!detailsRef.current?.contains(target as Node)) close();
-    };
-    const closeFromEscape = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape" || document.querySelector("dialog[open]") !== null) return;
-      close();
-      detailsRef.current?.querySelector<HTMLElement>("summary")?.focus();
-    };
-    document.addEventListener("pointerdown", closeFromOutside);
-    document.addEventListener("keydown", closeFromEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeFromOutside);
-      document.removeEventListener("keydown", closeFromEscape);
-    };
-  }, [open]);
-
-  useEffect(() => {
     if (!open || versions.length === 0) return;
     setSelectedIndex(versions.length - 1);
     onPreview(undefined);
   }, [historyQuery.state.data, open]);
 
   const close = (): void => {
-    detailsRef.current?.removeAttribute("open");
     setOpen(false);
     setRestoreCandidate(undefined);
     previewAction.reset();
@@ -130,92 +109,101 @@ export function HistoryControl({
 
   return (
     <>
-      <details
-        className={styles["control"]}
-        onToggle={(event) => {
-          const nextOpen = event.currentTarget.open;
-          setOpen(nextOpen);
-          if (!nextOpen) onPreview(undefined);
+      <Popover.Root
+        onOpenChange={(nextOpen) => {
+          if (nextOpen) setOpen(true);
+          else if (restoreCandidate === undefined) close();
         }}
-        ref={detailsRef}
+        open={open}
       >
-        <summary aria-haspopup="true" data-history-toggle="">
+        <Popover.Trigger
+          data-history-toggle=""
+          render={<Button hierarchy="tertiary" iconStart={<HistoryIcon />} />}
+        >
           History
-        </summary>
-        <section aria-label="Document history" className={styles["panel"]} data-history-dropdown="">
-          <header className={styles["heading"]}>
-            <div>
-              <p>Recorded changes</p>
-              <h2>Version history</h2>
-            </div>
-            <Button aria-label="Close version history" onClick={close} variant="icon">
-              ×
-            </Button>
-          </header>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Positioner align="end" collisionPadding={16} sideOffset={8}>
+            <Popover.Popup className={styles["panel"]} data-history-dropdown="">
+              <Stack align="start" direction="row" gap="auto">
+                <Stack gap="xxSmall">
+                  <Popover.Title>Version history</Popover.Title>
+                  <Popover.Description>Recorded changes to this document.</Popover.Description>
+                </Stack>
+                <IconButton aria-label="Close version history" onClick={close}>
+                  <CloseIcon />
+                </IconButton>
+              </Stack>
 
-          {historyQuery.state.status === "loading" && versions.length === 0 ? (
-            <p className={styles["empty"]}>Saving and loading history…</p>
-          ) : versions.length === 0 ? (
-            <p className={styles["empty"]}>No retained versions are available yet.</p>
-          ) : (
-            <>
-              <div className={styles["timeline"]}>
-                <input
-                  aria-label="Document revision"
-                  data-history-slider=""
-                  max={versions.length - 1}
-                  min={0}
-                  onChange={(event) => selectVersion(Number(event.currentTarget.value))}
-                  step={1}
-                  type="range"
-                  value={selectedIndex}
-                />
-                <div aria-hidden="true" className={styles["ends"]}>
-                  <span>Oldest</span>
-                  <span>Current</span>
-                </div>
-              </div>
-
-              {selected === undefined ? null : (
-                <article className={styles["version"]} data-history-revision={selected.revision}>
-                  <div className={styles["revisionLine"]}>
-                    <output>Revision {selected.revision}</output>
-                    {selected.revision === currentRevision ? <span>Current</span> : null}
+              {historyQuery.state.status === "loading" && versions.length === 0 ? (
+                <p className={styles["empty"]}>Saving and loading history…</p>
+              ) : versions.length === 0 ? (
+                <p className={styles["empty"]}>No retained versions are available yet.</p>
+              ) : (
+                <>
+                  <div className={styles["timeline"]}>
+                    <input
+                      aria-label="Document revision"
+                      data-history-slider=""
+                      max={versions.length - 1}
+                      min={0}
+                      onChange={(event) => selectVersion(Number(event.currentTarget.value))}
+                      step={1}
+                      type="range"
+                      value={selectedIndex}
+                    />
+                    <div aria-hidden="true" className={styles["ends"]}>
+                      <span>Oldest</span>
+                      <span>Current</span>
+                    </div>
                   </div>
-                  <strong>{versionLabel(selected)}</strong>
-                  <p>{versionAttribution(selected)}</p>
-                  {selected.revision === currentRevision ? (
-                    <small>The editor and preview show this version.</small>
-                  ) : previewAction.state.pending ? (
-                    <small>Loading this revision into the editor and preview…</small>
-                  ) : (
-                    <small>Changed lines briefly pulse in the editor and preview.</small>
-                  )}
-                </article>
-              )}
 
-              <Button
-                data-restore-history=""
-                disabled={
-                  !canRestore ||
-                  selected === undefined ||
-                  selected.revision === currentRevision ||
-                  previewAction.state.pending
-                }
-                onClick={() => setRestoreCandidate(selected)}
-                variant="primary"
-              >
-                Restore this version
-              </Button>
-            </>
-          )}
-          <FormError>
-            {historyQuery.state.status === "failure"
-              ? historyQuery.state.error.message
-              : previewAction.state.error?.message}
-          </FormError>
-        </section>
-      </details>
+                  {selected === undefined ? null : (
+                    <article
+                      className={styles["version"]}
+                      data-history-revision={selected.revision}
+                    >
+                      <div className={styles["revisionLine"]}>
+                        <output>Revision {selected.revision}</output>
+                        {selected.revision === currentRevision ? <span>Current</span> : null}
+                      </div>
+                      <strong>{versionLabel(selected)}</strong>
+                      <p>{versionAttribution(selected)}</p>
+                      {selected.revision === currentRevision ? (
+                        <small>The editor and preview show this version.</small>
+                      ) : previewAction.state.pending ? (
+                        <small>Loading this revision into the editor and preview…</small>
+                      ) : (
+                        <small>Changed lines briefly pulse in the editor and preview.</small>
+                      )}
+                    </article>
+                  )}
+
+                  <div>
+                    <Button
+                      data-restore-history=""
+                      disabled={
+                        !canRestore ||
+                        selected === undefined ||
+                        selected.revision === currentRevision ||
+                        previewAction.state.pending
+                      }
+                      onClick={() => setRestoreCandidate(selected)}
+                    >
+                      Restore this version
+                    </Button>
+                  </div>
+                </>
+              )}
+              <FormError>
+                {historyQuery.state.status === "failure"
+                  ? historyQuery.state.error.message
+                  : previewAction.state.error?.message}
+              </FormError>
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+      </Popover.Root>
 
       <ConfirmationDialog
         confirmLabel="Restore version"

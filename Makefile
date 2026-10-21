@@ -1,11 +1,21 @@
 PNPM ?= pnpm
 
-.PHONY: build check dev format format-check lint test typecheck
+.PHONY: build check dev elanor format format-check lint setup test typecheck
 
-dev:
+# Clones the Elanor submodule, builds its packages, and installs dependencies.
+setup:
+	git submodule update --init vendor/elanor-src
+	node scripts/build-elanor.mjs
+	$(PNPM) install
+
+# Rebuilds Elanor when the submodule moved; a no-op otherwise.
+elanor:
+	node scripts/build-elanor.mjs
+
+dev: elanor
 	$(PNPM) run dev
 
-build:
+build: elanor
 	$(PNPM) run build
 
 format:
@@ -23,4 +33,4 @@ test:
 typecheck:
 	$(PNPM) run typecheck
 
-check: format-check lint typecheck test build
+check: elanor format-check lint typecheck test build

@@ -1,17 +1,27 @@
 import { useEffect, useState } from "react";
 import { Effect } from "effect";
 
+import {
+  Button,
+  CodeSnippet,
+  ControlAndLabel,
+  Form,
+  Heading,
+  InlineCode,
+  Input,
+  Link,
+  Separator,
+  Stack,
+  Text,
+} from "@earendil-works/elanor-react";
 import type { ApiKeyCreated, ApiKeyDto } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService, ApiError } from "../api.ts";
 import { useEffectAction, useEffectQuery } from "../effect-hooks.ts";
-import { Button } from "./button.tsx";
 import { ConfirmationDialog } from "./confirmation-dialog.tsx";
-import { DialogHeader } from "./dialog-header.tsx";
+import { Dialog } from "./dialog.tsx";
 import { FormError } from "./form-error.tsx";
-import { ModalDialog } from "./modal-dialog.tsx";
 import styles from "./settings-dialog.module.css";
-import { TextField } from "./text-field.tsx";
 
 export interface SettingsDialogProps {
   readonly api: ApiClientService;
@@ -98,148 +108,183 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
 
   return (
     <>
-      <ModalDialog
-        aria-labelledby="settings-dialog-title"
-        className={styles["dialog"]}
-        data-settings-dialog=""
-        onDismiss={onClose}
+      <Dialog
+        attributes={{ "data-settings-dialog": "" }}
+        closeLabel="Close API keys"
+        onClose={onClose}
         open
+        title="API keys"
       >
-        <form data-settings-form="" onSubmit={submit}>
-          <DialogHeader
-            closeLabel="Close API keys"
-            onClose={onClose}
-            title="API keys"
-            titleId="settings-dialog-title"
-          />
-          <p className={styles["note"]} data-settings-note="">
-            Reuse an active key for coding agents. Create another only when you need separate
-            rotation or revocation. Keys have the same workspace permissions you do.
-          </p>
-          <p className={styles["note"]} data-mcp-endpoint="">
-            Agents connect to the MCP server at <code>{`${location.origin}/mcp`}</code> and send the
-            key as a bearer token. <a href="/AGENTS.md">Setup instructions</a>
-          </p>
+        <Stack align="stretch" gap="large">
+          <Stack align="stretch" gap="small">
+            <Text className={styles["note"]} data-settings-note="">
+              Reuse an active key for coding agents. Create another only when you need separate
+              rotation or revocation. Keys have the same workspace permissions you do.
+            </Text>
+            <Text className={styles["note"]} data-mcp-endpoint="">
+              Agents connect to the MCP server at{" "}
+              <InlineCode>{`${location.origin}/mcp`}</InlineCode> and send the key as a bearer
+              token. <Link href="/AGENTS.md">Setup instructions</Link>
+            </Text>
+          </Stack>
 
-          <section className={styles["list"]} aria-labelledby="api-key-list-title" data-api-keys="">
-            <div className={styles["listHeading"]}>
-              <div>
-                <h3 id="api-key-list-title">Reusable access</h3>
-                <p>Show and copy a key whenever you connect another agent.</p>
-              </div>
-              <span aria-label={`${activeKeys.length} active keys`}>{activeKeys.length}</span>
-            </div>
-            {keyQuery.state.status === "loading" && keys.length === 0 ? <p>Loading keys…</p> : null}
+          <Separator />
+
+          <section
+            aria-labelledby="api-key-list-title"
+            className={styles["section"]}
+            data-api-keys=""
+          >
+            <Stack align="start" direction="row" gap="auto">
+              <Stack gap="xxSmall">
+                <Heading id="api-key-list-title" level={3}>
+                  Reusable access
+                </Heading>
+                <Text className={styles["note"]}>
+                  Show and copy a key whenever you connect another agent.
+                </Text>
+              </Stack>
+              <span aria-label={`${activeKeys.length} active keys`} className={styles["count"]}>
+                {activeKeys.length}
+              </span>
+            </Stack>
+            {keyQuery.state.status === "loading" && keys.length === 0 ? (
+              <Text className={styles["note"]}>Loading keys…</Text>
+            ) : null}
             {activeKeys.length === 0 && keyQuery.state.status !== "loading" ? (
-              <p className={styles["listEmpty"]}>Create one key and reuse it across your agents.</p>
+              <Text className={styles["note"]}>
+                Create one key and reuse it across your agents.
+              </Text>
             ) : null}
             {activeKeys.map((key) => {
               const secret = revealedKeys[key.id];
               const visible = visibleKeyIds.includes(key.id) && secret !== undefined;
               return (
-                <article className={styles["keyRow"]} data-api-key={key.id} key={key.id}>
-                  <div className={styles["keySummary"]}>
-                    <span>
-                      <b>{key.label}</b>
-                      <small>{keyActivity(key)}</small>
-                    </span>
+                <article className={styles["key"]} data-api-key={key.id} key={key.id}>
+                  <Stack align="stretch" gap="xSmall">
+                    <Stack align="center" direction="row" gap="auto" wrap="wrap">
+                      <strong className={styles["keyLabel"]}>{key.label}</strong>
+                      <Text className={styles["meta"]} render={<span />}>
+                        {keyActivity(key)}
+                      </Text>
+                    </Stack>
                     {visible ? (
-                      <pre data-api-key-secret="">
-                        <code>{secret}</code>
-                      </pre>
+                      <CodeSnippet className={styles["secret"]} data-api-key-secret="">
+                        {secret}
+                      </CodeSnippet>
                     ) : (
-                      <code className={styles["maskedKey"]}>{key.id}.••••••••••••</code>
+                      <CodeSnippet
+                        className={styles["secret"]}
+                      >{`${key.id}.••••••••••••`}</CodeSnippet>
                     )}
                     {key.oauthClientName !== undefined ? (
-                      <small data-oauth-key="">
+                      <Text className={styles["meta"]} data-oauth-key="">
                         Connected by signing in from {key.oauthClientName}. Revoke it to disconnect.
-                      </small>
+                      </Text>
                     ) : !key.revealable ? (
-                      <small className={styles["legacyKey"]}>
+                      <Text className={styles["meta"]}>
                         This older key cannot be shown again. Replace it when convenient.
-                      </small>
+                      </Text>
                     ) : null}
-                  </div>
-                  <div className={styles["keyActions"]}>
+                  </Stack>
+                  <Stack direction="row" gap="xSmall" wrap="wrap">
                     {key.oauthClientName === undefined ? (
                       <Button
                         data-show-api-key={key.id}
-                        disabled={!key.revealable || revealingKeyId === key.id}
+                        density="compact"
+                        disabled={!key.revealable}
+                        hierarchy="secondary"
                         onClick={() => toggleKey(key)}
-                        variant="text"
+                        pending={revealingKeyId === key.id}
                       >
-                        {revealingKeyId === key.id ? "Showing…" : visible ? "Hide" : "Show"}
+                        {visible ? "Hide" : "Show"}
                       </Button>
                     ) : null}
                     {visible && secret !== undefined ? (
                       <Button
                         data-copy-api-key=""
+                        density="compact"
+                        hierarchy="secondary"
                         onClick={() =>
                           copyKey.execute(secret, {
                             onSuccess: () => setCopiedKeyId(key.id),
                           })
                         }
-                        variant="text"
                       >
                         {copiedKeyId === key.id ? "Copied" : "Copy API key"}
                       </Button>
                     ) : null}
                     <Button
                       data-revoke-key={key.id}
+                      density="compact"
+                      hierarchy="tertiary"
                       onClick={() => setKeyToRevoke(key)}
-                      variant="text"
+                      semantic="negative"
                     >
                       Revoke
                     </Button>
-                  </div>
+                  </Stack>
                 </article>
               );
             })}
           </section>
 
+          <Separator />
+
           {createOpen ? (
-            <section className={styles["create"]} aria-labelledby="api-key-create-title">
-              <div>
-                <h3 id="api-key-create-title">
+            <Form
+              aria-labelledby="api-key-create-title"
+              className={styles["section"]}
+              data-settings-form=""
+              onSubmit={submit}
+            >
+              <Stack gap="xxSmall">
+                <Heading id="api-key-create-title" level={3}>
                   {activeKeys.length === 0 ? "Create your API key" : "Create another API key"}
-                </h3>
-                <p>Use a separate key only when it needs its own revocation lifecycle.</p>
-              </div>
+                </Heading>
+                <Text className={styles["note"]}>
+                  Use a separate key only when it needs its own revocation lifecycle.
+                </Text>
+              </Stack>
               <div className={styles["createControls"]}>
-                <TextField
-                  label="Key name"
-                  maxLength={200}
-                  name="api-key-label"
-                  onChange={(event) => setLabel(event.currentTarget.value)}
-                  placeholder="Agent access"
-                  value={label}
-                />
-                <Button disabled={createKey.state.pending} type="submit" variant="primary">
-                  {createKey.state.pending ? "Creating…" : "Create API key"}
+                <ControlAndLabel label="Key name">
+                  <Input
+                    maxLength={200}
+                    name="api-key-label"
+                    onValueChange={setLabel}
+                    placeholder="Agent access"
+                    required
+                    value={label}
+                  />
+                </ControlAndLabel>
+                <Button pending={createKey.state.pending} type="submit">
+                  Create API key
                 </Button>
               </div>
               {activeKeys.length > 0 ? (
-                <Button onClick={() => setCreateOpen(false)} variant="text">
-                  Cancel
-                </Button>
+                <div>
+                  <Button hierarchy="tertiary" onClick={() => setCreateOpen(false)}>
+                    Cancel
+                  </Button>
+                </div>
               ) : null}
-            </section>
+            </Form>
           ) : (
-            <div className={styles["createPrompt"]}>
-              <p>Need an independently revocable key?</p>
-              <Button onClick={() => setCreateOpen(true)} variant="text">
+            <Stack align="center" direction="row" gap="auto" wrap="wrap">
+              <Text className={styles["note"]}>Need an independently revocable key?</Text>
+              <Button hierarchy="secondary" onClick={() => setCreateOpen(true)}>
                 Create another key
               </Button>
-            </div>
+            </Stack>
           )}
 
-          <p className={styles["safety"]}>
+          <Text className={styles["note"]}>
             Store keys only in your agent's secret storage, an environment variable, or a password
             manager. Never put one in AGENTS.md, an agent skill, chat, or source control.
-          </p>
+          </Text>
           <FormError data-settings-error="">{errors}</FormError>
-        </form>
-      </ModalDialog>
+        </Stack>
+      </Dialog>
       <ConfirmationDialog
         confirmLabel="Revoke key"
         description={

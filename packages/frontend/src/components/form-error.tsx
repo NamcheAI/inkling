@@ -1,16 +1,25 @@
 import type { HTMLAttributes } from "react";
 
+import { Text } from "@earendil-works/elanor-react";
+
 import styles from "./form-error.module.css";
 
 export interface FormErrorProps extends Omit<HTMLAttributes<HTMLParagraphElement>, "role"> {}
 
-export function FormError({ className, ...props }: FormErrorProps): React.JSX.Element {
+/** An error message for a form or action. Alerts are announced when they appear. */
+export function FormError({
+  children,
+  className,
+  ...props
+}: FormErrorProps): React.JSX.Element | null {
+  if (children === undefined || children === null || children === "") return null;
   return (
-    <p
+    <Text
       {...props}
-      aria-live="polite"
       className={[styles["error"], className].filter(Boolean).join(" ")}
       role="alert"
-    />
+    >
+      {children}
+    </Text>
   );
 }

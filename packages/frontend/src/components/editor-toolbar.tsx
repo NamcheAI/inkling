@@ -1,3 +1,5 @@
+import { ChatBubbleIcon, DeleteIcon, VisibilityIcon } from "@earendil-works/elanor-icons-react";
+import { Button } from "@earendil-works/elanor-react";
 import type {
   AttachmentMetadataDto,
   DocumentMetadataDto,
@@ -10,7 +12,6 @@ import { documentHref } from "../ui.ts";
 import { AllocateRfcButton } from "./allocate-rfc-button.tsx";
 import { AttachmentButton } from "./attachment-button.tsx";
 import { ButtonLink } from "./button-link.tsx";
-import { Button } from "./button.tsx";
 import styles from "./editor.module.css";
 import { HistoryControl } from "./history-control.tsx";
 import type { HistoryControlProps } from "./history-control.tsx";
@@ -25,6 +26,7 @@ export interface EditorToolbarProps {
   readonly canDelete: boolean;
   readonly canEdit: boolean;
   readonly canEditMetadata: boolean;
+  readonly commentsButtonRef?: React.Ref<HTMLButtonElement> | undefined;
   readonly metadata: DocumentMetadataDto;
   readonly onAttachment: (attachment: AttachmentMetadataDto) => void;
   readonly onDelete: () => void;
@@ -49,6 +51,7 @@ export function EditorToolbar({
   canDelete,
   canEdit,
   canEditMetadata,
+  commentsButtonRef,
   metadata,
   onAttachment,
   onDelete,
@@ -81,8 +84,8 @@ export function EditorToolbar({
         <Button
           aria-pressed={previewOpen}
           className={styles["previewToggle"]}
-          variant="toolbar"
           data-preview-toggle=""
+          hierarchy="secondary"
           onClick={onTogglePreview}
         >
           Preview
@@ -93,8 +96,14 @@ export function EditorToolbar({
           documentId={metadata.id}
           onUploaded={onAttachment}
         />
-        <Button variant="toolbar" onClick={onOpenComments}>
-          Comments{" "}
+        <Button
+          data-open-comments=""
+          hierarchy="tertiary"
+          iconStart={<ChatBubbleIcon />}
+          onClick={onOpenComments}
+          ref={commentsButtonRef}
+        >
+          Comments
           <span className={styles["commentCount"]} data-comment-count="">
             {openCommentCount}
           </span>
@@ -125,9 +134,9 @@ export function EditorToolbar({
           />
         )}
         <ButtonLink
-          className={styles["modeLink"]}
+          hierarchy="tertiary"
+          iconStart={<VisibilityIcon />}
           href={documentHref(metadata.id, metadata.rfcNumber, shared, "read")}
-          variant="toolbar"
         >
           View
         </ButtonLink>
@@ -144,10 +153,11 @@ export function EditorToolbar({
         )}
         {canDelete && !trashed ? (
           <Button
-            className={styles["delete"]}
             data-delete-document=""
+            hierarchy="tertiary"
+            iconStart={<DeleteIcon />}
             onClick={onDelete}
-            variant="toolbar"
+            semantic="negative"
           >
             Trash
           </Button>

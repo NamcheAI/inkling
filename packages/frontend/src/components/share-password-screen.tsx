@@ -1,11 +1,21 @@
 import { useState } from "react";
 
+import { LockIcon } from "@earendil-works/elanor-icons-react";
+import {
+  Button,
+  ControlAndLabel,
+  Form,
+  Heading,
+  Input,
+  Layout,
+  Stack,
+  Text,
+} from "@earendil-works/elanor-react";
+
 import type { ApiClientService, ApiError } from "../api.ts";
 import { useEffectAction } from "../effect-hooks.ts";
-import { Button } from "./button.tsx";
 import { FormError } from "./form-error.tsx";
 import styles from "./share-password-screen.module.css";
-import { TextField } from "./text-field.tsx";
 
 export function SharePasswordScreen({
   api,
@@ -22,31 +32,41 @@ export function SharePasswordScreen({
   );
 
   return (
-    <main className={styles["layout"]} data-share-password-screen="" id="app" tabIndex={-1}>
-      <form
+    <Layout.Main className={styles["layout"]} data-share-password-screen="" id="app" tabIndex={-1}>
+      <Form
+        className={styles["form"]}
         onSubmit={(event) => {
           event.preventDefault();
           if (password === "") return;
           unlock.execute(password, { onSuccess: onUnlocked });
         }}
       >
-        <p className={styles["eyebrow"]}>Protected share</p>
-        <h1>Password required</h1>
-        <p>Enter the password supplied by the person who shared this document.</p>
-        <TextField
-          autoComplete="current-password"
-          autoFocus
-          label="Password"
-          onChange={(event) => setPassword(event.currentTarget.value)}
-          required
-          type="password"
-          value={password}
-        />
-        <Button disabled={unlock.state.pending} type="submit" variant="primary">
-          {unlock.state.pending ? "Opening…" : "Open document"}
-        </Button>
+        <Stack gap="small">
+          <LockIcon aria-hidden="true" className={styles["icon"]} />
+          <Heading level={1} size={3}>
+            Password required
+          </Heading>
+          <Text className={styles["description"]}>
+            Enter the password supplied by the person who shared this document.
+          </Text>
+        </Stack>
+        <ControlAndLabel label="Password">
+          <Input
+            autoComplete="current-password"
+            autoFocus
+            onValueChange={setPassword}
+            required
+            type="password"
+            value={password}
+          />
+        </ControlAndLabel>
         <FormError>{unlock.state.error?.message}</FormError>
-      </form>
-    </main>
+        <div>
+          <Button pending={unlock.state.pending} type="submit">
+            Open document
+          </Button>
+        </div>
+      </Form>
+    </Layout.Main>
   );
 }
