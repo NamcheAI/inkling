@@ -1,9 +1,6 @@
-import { useEffect } from "react";
-
 import { Container, Layout } from "@earendil-works/elanor-react";
 import type { DocumentResponse } from "@earendil-works/inkling-protocol";
 
-import { useAppContext } from "./app-context.tsx";
 import { ReaderDocument } from "./components/reader-document.tsx";
 import { ReaderToolbar } from "./components/reader-toolbar.tsx";
 import styles from "./workspace.module.css";
@@ -19,11 +16,6 @@ export function ReaderScreen({
   publicDocument = false,
   shared,
 }: ReaderScreenProps): React.JSX.Element {
-  const { setParticipants } = useAppContext();
-  useEffect(() => {
-    setParticipants([]);
-  }, [setParticipants]);
-
   return (
     <Layout.Main className={styles["layout"]} id="app" tabIndex={-1}>
       <Container>

@@ -78,35 +78,31 @@ export function CommentControls({
             >
               Show resolved threads
             </SelectionControlAndLabel>
-            <div
-              className={styles["orphaned"]}
-              data-orphaned-comments=""
-              hidden={orphaned.length === 0}
-            >
-              {orphaned.length === 0 ? null : (
+            {orphaned.length === 0 ? null : (
+              <div className={styles["orphaned"]} data-orphaned-comments="">
                 <p>
                   <b>
                     {orphaned.length} orphaned {orphaned.length === 1 ? "thread" : "threads"}
                   </b>
                   <br />
-                  Its original text was removed.
+                  {orphaned.length === 1 ? "Its" : "Their"} original text was removed.
                 </p>
-              )}
-              {orphaned.map((projection) => (
-                <button
-                  className={styles["orphanedThread"]}
-                  data-comment-bubble={projection.thread.id}
-                  data-comment-surface="preview"
-                  key={projection.thread.id}
-                  type="button"
-                >
-                  <span>
-                    {projection.thread.messages[0]?.authorDisplayName ?? "Unknown author"}
-                  </span>
-                  {projection.thread.messages[0]?.body ?? "Open comment"}
-                </button>
-              ))}
-            </div>
+                {orphaned.map((projection) => (
+                  <button
+                    className={styles["orphanedThread"]}
+                    data-comment-bubble={projection.thread.id}
+                    data-comment-surface="preview"
+                    key={projection.thread.id}
+                    type="button"
+                  >
+                    <span>
+                      {projection.thread.messages[0]?.authorDisplayName ?? "Unknown author"}
+                    </span>
+                    {projection.thread.messages[0]?.body ?? "Open comment"}
+                  </button>
+                ))}
+              </div>
+            )}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

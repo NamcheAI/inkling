@@ -95,11 +95,6 @@
   font: var(--semantic-typography-ui-label);
 }
 
-.tocMenu {
-  z-index: var(--semantic-number-layer-floating);
-  background: var(--semantic-color-background-canvas);
-}
-
 .preview .heading {
   grid-template-columns: 6.5rem minmax(0, 1fr);
 }

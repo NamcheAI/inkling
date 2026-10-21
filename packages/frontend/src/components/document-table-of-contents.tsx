@@ -32,7 +32,6 @@ export function DocumentTableOfContents({
   if (presentation === "menu") {
     return (
       <TableOfContents.Menu
-        className={styles["tocMenu"]}
         data-reader-toc=""
         ref={tableOfContentsRef as React.Ref<HTMLDivElement>}
       >

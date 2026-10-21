@@ -13,7 +13,6 @@
 .body :where(h1, h2, h3, h4, h5, h6) {
   margin-block-end: 0;
   color: var(--semantic-color-text-primary);
-  font-family: var(--heading-font);
   scroll-margin-block-start: calc(
     var(--masthead-height) + var(--semantic-dimension-space-gap-large)
   );
