@@ -1008,6 +1008,129 @@ interface TestSession {
   readonly csrf: string;
 }
 
+test("agents read and write documents over MCP", { timeout: 30_000 }, async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "inkling-mcp-"));
+  try {
+    await withServer(directory, async (baseUrl, session) => {
+      const authorization = await setupApiKey(baseUrl, "mcp agent", session);
+      let nextId = 1;
+      const rpc = async (
+        method: string,
+        params: unknown,
+        headers: Readonly<Record<string, string>> = authorization,
+      ) => {
+        const response = await fetch(`${baseUrl}/mcp`, {
+          body: JSON.stringify({ id: nextId++, jsonrpc: "2.0", method, params }),
+          headers: {
+            ...headers,
+            Accept: "application/json, text/event-stream",
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        });
+        return { body: (await response.json()) as any, status: response.status };
+      };
+      const call = async (name: string, args: Readonly<Record<string, unknown>>) => {
+        const { body, status } = await rpc("tools/call", { arguments: args, name });
+        assert.equal(status, 200, name);
+        assert.notEqual(body.result.isError, true, `${name}: ${body.result.content?.[0]?.text}`);
+        return body.result as {
+          readonly content: readonly { readonly text: string }[];
+          readonly structuredContent: any;
+        };
+      };
+
+      const rejected = await rpc("initialize", {}, { Authorization: "Bearer key_bogus.secret" });
+      assert.equal(rejected.status, 401);
+      const initialized = await rpc("initialize", {
+        capabilities: {},
+        clientInfo: { name: "integration", version: "1" },
+        protocolVersion: "2025-11-25",
+      });
+      assert.equal(initialized.status, 200);
+      assert.equal(initialized.body.result.protocolVersion, "2025-11-25");
+      const listed = await rpc("tools/list", {});
+      assert.ok(listed.body.result.tools.some((tool: any) => tool.name === "edit_document"));
+
+      const created = await call("create_document", {
+        body: "# Cache design\n\nThe cache is shared between workers.\n",
+        rfc: true,
+        title: "Cache design",
+      });
+      const rfcNumber = created.structuredContent.metadata.rfcNumber as number;
+      const documentId = created.structuredContent.metadata.id as string;
+      assert.ok(rfcNumber > 0);
+      const rfcPath = `/rfc/${String(rfcNumber).padStart(4, "0")}`;
+      assert.equal(created.structuredContent.url, `${baseUrl}${rfcPath}`);
+
+      const read = await call("read_document", { document: `${baseUrl}${rfcPath}/edit` });
+      assert.equal(read.structuredContent.metadata.id, documentId);
+      assert.match(read.content[0]?.text ?? "", /The cache is shared between workers\./u);
+      assert.match(read.content[0]?.text ?? "", /^---$/mu);
+
+      const edited = await call("edit_document", {
+        document: String(rfcNumber),
+        edits: [{ new_text: "is partitioned per tenant", old_text: "is shared between workers" }],
+      });
+      assert.match(edited.content[0]?.text ?? "", /Applied 1 edit/u);
+
+      const commented = await call("add_comment", {
+        body: "Which partition key?",
+        document: documentId,
+        quote: "partitioned per tenant",
+      });
+      const threadId = commented.structuredContent.thread.id as string;
+      assert.equal(
+        commented.structuredContent.thread.messages[0].authorDisplayName,
+        "Integration Admin",
+      );
+      await call("reply_to_comment", {
+        body: "The tenant ID.",
+        document: documentId,
+        thread_id: threadId,
+      });
+      const resolved = await call("resolve_comment_thread", {
+        document: documentId,
+        thread_id: threadId,
+      });
+      assert.equal(resolved.structuredContent.thread.resolved, true);
+      assert.equal(resolved.structuredContent.thread.messages.length, 2);
+
+      const current = await readDocument(baseUrl, documentId, authorization);
+      assert.ok(current.body.includes("The cache is partitioned per tenant."));
+      assert.equal((current.comments.threads[0] as any)?.anchor.quote, "partitioned per tenant");
+
+      const found = await call("search_documents", { query: "partitioned" });
+      assert.deepEqual(
+        found.structuredContent.documents.map((document: any) => document.id),
+        [documentId],
+      );
+
+      await call("publish_document", { document: documentId });
+      const published = await call("read_document", { document: documentId, published: true });
+      assert.match(published.content[0]?.text ?? "", /\(published revision\)/u);
+
+      const stale = await rpc("tools/call", {
+        arguments: { body: "# Replaced\n", document: documentId, expected_revision: 0 },
+        name: "replace_document_body",
+      });
+      assert.equal(stale.body.result.isError, true);
+      assert.match(stale.body.result.content[0].text, /revision_conflict/u);
+
+      await call("delete_document", { document: documentId });
+      const trash = await call("list_trash", {});
+      assert.equal(trash.structuredContent.documents[0]?.id, documentId);
+      await call("restore_document", { document: documentId });
+      assert.equal(
+        (await readDocument(baseUrl, documentId, authorization)).metadata.deletedAt,
+        undefined,
+      );
+    });
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 async function withServer<A>(
   directory: string,
   callback: (baseUrl: string, session: TestSession, running: RunningServer) => Promise<A>,

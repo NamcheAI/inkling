@@ -39,6 +39,7 @@
     "run_worker_first": [
       "/AGENTS.md",
       "/api/*",
+      "/mcp",
       "/rfc/*",
       "/rfcs/*",
       "/public/*",

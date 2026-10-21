@@ -12,7 +12,7 @@ import {
   IdGeneratorLive,
 } from "../src/index.ts";
 
-test("served agent instructions explain personal API keys and safe CLI use", async () => {
+test("served agent instructions explain MCP setup with personal API keys", async () => {
   const response = await createBackendApp({ version: "test" }).request(
     "https://rfcs.example.com/AGENTS.md",
   );
@@ -21,18 +21,22 @@ test("served agent instructions explain personal API keys and safe CLI use", asy
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/markdown/u);
   assert.match(body, /base URL is https:\/\/rfcs\.example\.com/u);
-  assert.match(body, /npm install --global @earendil-works\/inkling-cli/u);
-  assert.ok(body.indexOf("npm install") < body.indexOf("inkling workspace list"));
+  assert.match(body, /MCP server at https:\/\/rfcs\.example\.com\/mcp/u);
   assert.match(body, /account menu.*API keys/su);
   assert.match(body, /Reuse an active key.*click \*\*Show\*\*/su);
-  assert.match(body, /inkling workspace add https:\/\/rfcs\.example\.com API_KEY/u);
-  assert.match(body, /inkling read https:\/\/rfcs\.example\.com\/rfc\/0057/u);
-  assert.match(body, /inkling read rfcs\.example\.com DOCUMENT_ID/u);
-  assert.match(body, /Capability .* URLs.*without configuring a workspace/u);
+  assert.match(
+    body,
+    /claude mcp add --transport http inkling https:\/\/rfcs\.example\.com\/mcp --header "Authorization: Bearer \$INKLING_API_KEY"/u,
+  );
+  assert.match(body, /"Authorization": "Bearer \$\{INKLING_API_KEY\}"/u);
+  assert.match(body, /https:\/\/rfcs\.example\.com\/rfc\/0057/u);
   assert.match(body, /API keys belong to the user who created them/u);
   assert.match(body, /__require_auth=1/u);
-  assert.match(body, /\.agents\/skills\/inkling\/SKILL\.md/u);
-  assert.match(body, /never contain an API key/u);
+  assert.match(body, /Permanent deletion is not available to agents/u);
+  assert.match(body, /Never print, commit, log, or embed API keys/u);
+  for (const tool of ["search_documents", "read_document", "edit_document", "add_comment"]) {
+    assert.ok(body.includes(`\`${tool}\``), tool);
+  }
 });
 
 test("unavailable resources put the agent handoff at the start of default HTML", async () => {
@@ -47,7 +51,7 @@ test("unavailable resources put the agent handoff at the start of default HTML",
   const visibleBody = body.slice(body.indexOf("<body>"));
   assert.match(visibleBody, /INKLING AGENT HANDOFF/u);
   assert.match(visibleBody, /do not summarize this application response/u);
-  assert.match(visibleBody, /inkling read/u);
+  assert.match(visibleBody, /read_document/u);
   assert.doesNotMatch(body, /0057/u);
 });
 

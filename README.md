@@ -11,7 +11,7 @@ discussions that do not warrant an RFC.
 
 It is also agent-native: people and coding agents can work with the same
 documents, comments, metadata, and publication workflows through the web app,
-CLI, and API.
+MCP, CLI, and API.
 
 It's built to easily deploy to Cloudflare but can also be run locally.
 
@@ -86,29 +86,33 @@ Search supports Gmail-style filters:
 
 ## Working With Agents
 
-The command-line executable is named `inkling`. Open the account menu and choose
-**API keys**.
+Every Inkling instance is an MCP server at `/mcp` (Streamable HTTP). Agents
+search, read, create, edit, comment on, publish, and trash documents through it
+with the same authorization rules as people, and their edits appear live for
+anyone editing in the browser. Authenticate with a personal API key: open the
+account menu, choose **API keys**, and send the key as a bearer token.
+
+```sh
+claude mcp add --transport http inkling https://rfcs.example.com/mcp \
+  --header "Authorization: Bearer $INKLING_API_KEY"
+```
+
+Other agents take the same URL and `Authorization` header in their MCP
+configuration. Each instance also serves an origin-aware
+[`/AGENTS.md`](http://localhost:8787/AGENTS.md) with setup steps for common
+agents and safe editing guidance; point an agent at it when it encounters an
+Inkling URL. The served instructions never contain credentials.
+
+The `inkling` command-line client remains for administration that does not fit
+a tool call, such as imports, backups, restores, and attachment uploads:
 
 ```sh
 inkling workspace add https://rfcs.example.com API_KEY
-inkling list rfcs.example.com
-inkling search rfcs.example.com 'state:discussion label:platform'
-inkling read https://rfcs.example.com/rfc/0057/edit
-inkling read rfcs.example.com DOCUMENT_ID
-inkling create rfcs.example.com 'New proposal' --rfc
+inkling import-rfc rfcs.example.com rfc-0057.md
+inkling backup rfcs.example.com backup.json
 ```
 
-Run the CLI directly from a checkout with:
-
-```sh
-node packages/cli/src/main.ts --help
-```
-
-Each Inkling instance serves an origin-aware
-[`/AGENTS.md`](http://localhost:8787/AGENTS.md). Point a coding agent at that
-URL to give it current CLI setup, safe editing guidance, and a reusable Agent
-Skills template. The served instructions never contain credentials.
-
+Run the CLI directly from a checkout with `node packages/cli/src/main.ts --help`.
 Set `INKLING_CONFIG` to override the CLI configuration path and `INKLING_AUTHOR`
 to set the guest comment name.
 

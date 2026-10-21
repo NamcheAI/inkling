@@ -454,6 +454,49 @@ test(
           ).documents.some((document) => document.metadata.id === second.metadata.id),
           false,
         );
+
+        const mcp = async (method: string, params: unknown) => {
+          assert.ok(running);
+          const response = await fetch(`${running.baseUrl}/mcp`, {
+            body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
+            headers: { ...authorization, "Content-Type": "application/json" },
+            method: "POST",
+          });
+          assert.equal(response.status, 200, method);
+          return ((await response.json()) as { result: any }).result;
+        };
+        assert.equal(
+          (await mcp("initialize", { protocolVersion: "2025-11-25" })).serverInfo.version,
+          "cloudflare",
+        );
+        const agentNote = await mcp("tools/call", {
+          arguments: { body: "# Agent note\n\nWritten over MCP.\n", title: "Agent note" },
+          name: "create_document",
+        });
+        const agentNoteId = agentNote.structuredContent.metadata.id as string;
+        const agentEdit = await mcp("tools/call", {
+          arguments: {
+            document: `${running.baseUrl}/documents/${agentNoteId}`,
+            edits: [
+              { new_text: "Edited through the Worker router.", old_text: "Written over MCP." },
+            ],
+          },
+          name: "edit_document",
+        });
+        assert.notEqual(agentEdit.isError, true, agentEdit.content[0].text);
+        const agentComment = await mcp("tools/call", {
+          arguments: { body: "Looks right.", document: agentNoteId, quote: "Worker router" },
+          name: "add_comment",
+        });
+        assert.notEqual(agentComment.isError, true, agentComment.content[0].text);
+        const agentRead = await mcp("tools/call", {
+          arguments: { document: "RFC 0001" },
+          name: "read_document",
+        });
+        assert.equal(agentRead.structuredContent.metadata.id, first.metadata.id);
+        const persistedNote = await readDocument(running.baseUrl, agentNoteId, authorization);
+        assert.ok(persistedNote.body.includes("Edited through the Worker router."));
+        assert.equal(persistedNote.comments.threads.length, 1);
       } finally {
         await running.stop();
         running = undefined;
@@ -501,6 +544,7 @@ function nextSocketMessage(socket: WebSocket): Promise<Record<string, unknown>> 
 
 interface DocumentWire {
   readonly body: string;
+  readonly comments: { readonly threads: readonly unknown[] };
   readonly metadata: {
     readonly authors: readonly {
       readonly displayName: string;

@@ -113,8 +113,12 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
             titleId="settings-dialog-title"
           />
           <p className={styles["note"]} data-settings-note="">
-            Reuse an active key for the Inkling CLI and coding agents. Create another only when you
-            need separate rotation or revocation. Keys have the same workspace permissions you do.
+            Reuse an active key for coding agents. Create another only when you need separate
+            rotation or revocation. Keys have the same workspace permissions you do.
+          </p>
+          <p className={styles["note"]} data-mcp-endpoint="">
+            Agents connect to the MCP server at <code>{`${location.origin}/mcp`}</code> and send the
+            key as a bearer token. <a href="/AGENTS.md">Setup instructions</a>
           </p>
 
           <section className={styles["list"]} aria-labelledby="api-key-list-title" data-api-keys="">
@@ -224,8 +228,8 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
           )}
 
           <p className={styles["safety"]}>
-            Store keys only in Inkling's user-only CLI configuration or a password manager. Never
-            put one in AGENTS.md, an agent skill, chat, or source control.
+            Store keys only in your agent's secret storage, an environment variable, or a password
+            manager. Never put one in AGENTS.md, an agent skill, chat, or source control.
           </p>
           <FormError data-settings-error="">{errors}</FormError>
         </form>

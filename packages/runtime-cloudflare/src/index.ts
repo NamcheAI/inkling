@@ -22,9 +22,11 @@ import {
   DigestLive,
   findBundledTheme,
   finishGoogleAuthentication,
+  handleMcpRequest,
   IdGeneratorLive,
   InklingApplication,
   localApplicationLayer,
+  mcpEndpointPath,
   rfcRedirectLocation,
   SecretHasherLive,
   SecureTokenLive,
@@ -839,94 +841,106 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
 }
 
 const worker: ExportedHandler<CloudflareEnvironment> = {
-  async fetch(request, environment) {
-    const url = new URL(request.url);
-    if (request.method === "GET" || request.method === "HEAD") {
-      const location = rfcRedirectLocation(request.url);
-      if (location !== undefined) {
-        return new Response(null, { headers: { Location: location }, status: 308 });
-      }
-    }
-    if (url.pathname === "/theme.css" || url.pathname === "/theme.json") {
-      try {
-        const theme = await Effect.runPromise(themeFromEnvironment(environment.INKLING_THEME));
-        return url.pathname === "/theme.css"
-          ? themeCssResponse(theme)
-          : Response.json(theme, { headers: { "Cache-Control": "public, max-age=300" } });
-      } catch {
-        return new Response(
-          url.pathname === "/theme.css"
-            ? "/* INKLING_THEME is invalid. */\n"
-            : JSON.stringify({ error: "INKLING_THEME is invalid." }),
-          {
-            headers: {
-              "Cache-Control": "no-store",
-              "Content-Type":
-                url.pathname === "/theme.css"
-                  ? "text/css; charset=UTF-8"
-                  : "application/json; charset=UTF-8",
-            },
-            status: 500,
-          },
-        );
-      }
-    }
-    if (url.pathname === "/api/auth/google/start") {
-      return startGoogleAuthentication(request, environment);
-    }
-    if (url.pathname === "/api/auth/google/callback") {
-      return finishGoogleAuthentication(request, environment, async (identity, people) => {
-        const session = await workspaceStub(environment).loginIdentity(identity, people);
-        if (!session.ok) throw new Error(session.error.message);
-        return session.value;
-      });
-    }
-    const rfcAllocationDocumentId = documentIdFromRfcAllocation(url.pathname);
-    if (request.method === "POST" && rfcAllocationDocumentId !== undefined) {
-      return allocateRfcNumber(request, environment, rfcAllocationDocumentId);
-    }
-    const documentId = documentIdFromPath(url.pathname);
-    if (documentId !== undefined) {
-      return dispatchDocument(request, environment, documentId);
-    }
-    if (/^\/rfc\/\d+$/u.test(url.pathname) && credentials(request).sessionToken !== undefined) {
-      return environment.ASSETS.fetch(request);
-    }
-    const rfcNumber = rfcNumberFromPath(url.pathname);
-    if (rfcNumber !== undefined) {
-      const resolution = await workspaceStub(environment).resolvePublicRfc(rfcNumber);
-      if (!resolution.ok) {
-        return resolution.error.status === 404 && /^\/rfc\/\d+/u.test(url.pathname)
-          ? agentResourceUnavailableResponse(request.url)
-          : protocolErrorResponse(resolution.error);
-      }
-      return dispatchDocument(request, environment, resolution.value.documentId, resolution.value);
-    }
-    if (isApplicationPath(url.pathname)) {
-      if (url.pathname === "/api/admin/backup") {
-        const authorized = await workspaceStub(environment).authorize(credentials(request));
-        if (!authorized.ok) return protocolErrorResponse(authorized.error);
-        if (
-          (authorized.value.kind !== "workspace" && authorized.value.kind !== "api-key") ||
-          authorized.value.role !== "administrator"
-        ) {
-          return protocolErrorResponse({
-            code: "forbidden",
-            message: "Workspace administrator access is required.",
-            retryable: false,
-            status: 403,
-          });
-        }
-        const flushed = await flushDocumentsForBackup(environment);
-        if (!flushed.ok) return protocolErrorResponse(flushed.error);
-      }
-      return workspaceStub(environment).fetch(request);
-    }
-    return environment.ASSETS.fetch(request);
-  },
+  fetch: (request, environment) => route(request, environment),
 };
 
 export default worker;
+
+async function route(request: Request, environment: CloudflareEnvironment): Promise<Response> {
+  const url = new URL(request.url);
+  if (url.pathname === mcpEndpointPath) {
+    // MCP tool calls re-enter this router so document operations reach
+    // their owning document authority exactly as direct API calls do.
+    return Effect.runPromise(
+      handleMcpRequest(request, {
+        dispatch: (inner) => route(inner, environment),
+        version: "cloudflare",
+      }),
+    );
+  }
+  if (request.method === "GET" || request.method === "HEAD") {
+    const location = rfcRedirectLocation(request.url);
+    if (location !== undefined) {
+      return new Response(null, { headers: { Location: location }, status: 308 });
+    }
+  }
+  if (url.pathname === "/theme.css" || url.pathname === "/theme.json") {
+    try {
+      const theme = await Effect.runPromise(themeFromEnvironment(environment.INKLING_THEME));
+      return url.pathname === "/theme.css"
+        ? themeCssResponse(theme)
+        : Response.json(theme, { headers: { "Cache-Control": "public, max-age=300" } });
+    } catch {
+      return new Response(
+        url.pathname === "/theme.css"
+          ? "/* INKLING_THEME is invalid. */\n"
+          : JSON.stringify({ error: "INKLING_THEME is invalid." }),
+        {
+          headers: {
+            "Cache-Control": "no-store",
+            "Content-Type":
+              url.pathname === "/theme.css"
+                ? "text/css; charset=UTF-8"
+                : "application/json; charset=UTF-8",
+          },
+          status: 500,
+        },
+      );
+    }
+  }
+  if (url.pathname === "/api/auth/google/start") {
+    return startGoogleAuthentication(request, environment);
+  }
+  if (url.pathname === "/api/auth/google/callback") {
+    return finishGoogleAuthentication(request, environment, async (identity, people) => {
+      const session = await workspaceStub(environment).loginIdentity(identity, people);
+      if (!session.ok) throw new Error(session.error.message);
+      return session.value;
+    });
+  }
+  const rfcAllocationDocumentId = documentIdFromRfcAllocation(url.pathname);
+  if (request.method === "POST" && rfcAllocationDocumentId !== undefined) {
+    return allocateRfcNumber(request, environment, rfcAllocationDocumentId);
+  }
+  const documentId = documentIdFromPath(url.pathname);
+  if (documentId !== undefined) {
+    return dispatchDocument(request, environment, documentId);
+  }
+  if (/^\/rfc\/\d+$/u.test(url.pathname) && credentials(request).sessionToken !== undefined) {
+    return environment.ASSETS.fetch(request);
+  }
+  const rfcNumber = rfcNumberFromPath(url.pathname);
+  if (rfcNumber !== undefined) {
+    const resolution = await workspaceStub(environment).resolvePublicRfc(rfcNumber);
+    if (!resolution.ok) {
+      return resolution.error.status === 404 && /^\/rfc\/\d+/u.test(url.pathname)
+        ? agentResourceUnavailableResponse(request.url)
+        : protocolErrorResponse(resolution.error);
+    }
+    return dispatchDocument(request, environment, resolution.value.documentId, resolution.value);
+  }
+  if (isApplicationPath(url.pathname)) {
+    if (url.pathname === "/api/admin/backup") {
+      const authorized = await workspaceStub(environment).authorize(credentials(request));
+      if (!authorized.ok) return protocolErrorResponse(authorized.error);
+      if (
+        (authorized.value.kind !== "workspace" && authorized.value.kind !== "api-key") ||
+        authorized.value.role !== "administrator"
+      ) {
+        return protocolErrorResponse({
+          code: "forbidden",
+          message: "Workspace administrator access is required.",
+          retryable: false,
+          status: 403,
+        });
+      }
+      const flushed = await flushDocumentsForBackup(environment);
+      if (!flushed.ok) return protocolErrorResponse(flushed.error);
+    }
+    return workspaceStub(environment).fetch(request);
+  }
+  return environment.ASSETS.fetch(request);
+}
 
 function themeFromEnvironment(
   value: string | undefined,

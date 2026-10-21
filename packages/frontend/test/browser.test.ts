@@ -27,7 +27,7 @@ test("the application shell keeps agent instructions in visible body text", asyn
   assert.match(visibleText, /INKLING AGENT HANDOFF/u);
   assert.match(visibleText, /do not summarize this application shell/u);
   assert.match(visibleText, /\/AGENTS\.md/u);
-  assert.match(visibleText, /inkling read/u);
+  assert.match(visibleText, /read_document/u);
 });
 
 test(
@@ -101,6 +101,11 @@ test(
       assert.match(
         (await first.locator("[data-settings-note]").textContent()) ?? "",
         /Reuse an active key/u,
+      );
+      assert.ok(
+        ((await first.locator("[data-mcp-endpoint]").textContent()) ?? "").includes(
+          `${baseUrl}/mcp`,
+        ),
       );
       await first.getByLabel("Key name").fill("Browser agent");
       await first.getByRole("button", { name: "Create API key" }).click();
