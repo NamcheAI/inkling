@@ -21,7 +21,7 @@
   transform-origin: left;
 }
 
-:global(:root[data-navigating]) .masthead::after {
+.masthead[data-navigation="loading"]::after {
   opacity: var(--semantic-number-opacity-visible);
   transform: scaleX(0.86);
   transition:
@@ -29,7 +29,7 @@
     transform 180ms ease-out;
 }
 
-:global(:root[data-navigation-complete]) .masthead::after {
+.masthead[data-navigation="complete"]::after {
   opacity: var(--semantic-number-opacity-hidden);
   transform: scaleX(1);
   transition:
@@ -130,12 +130,12 @@ a.crumb:hover {
   background: var(--semantic-color-icon-negative);
 }
 
-:global(:root[data-api="ready"]) .statusLight {
+.statusLight[data-state="ready"] {
   background: var(--semantic-color-icon-positive);
 }
 
-:global(:root[data-api="saving"]) .statusLight,
-:global(:root[data-api="connecting"]) .statusLight {
+.statusLight[data-state="saving"],
+.statusLight[data-state="connecting"] {
   background: var(--semantic-color-icon-warning);
   animation: pulse var(--semantic-transition-pulse-duration) infinite alternate;
 }

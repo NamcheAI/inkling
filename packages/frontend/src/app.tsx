@@ -89,28 +89,6 @@ export function App(): React.JSX.Element {
     document.title = pageTitle;
   }, [pageTitle]);
   useEffect(() => {
-    if (status === undefined) {
-      delete document.documentElement.dataset["api"];
-    } else {
-      document.documentElement.dataset["api"] = status.state;
-    }
-  }, [status]);
-  useEffect(() => {
-    const root = document.documentElement;
-    let completionTimer: ReturnType<typeof setTimeout> | undefined;
-    if (navigating) {
-      delete root.dataset["navigationComplete"];
-      root.dataset["navigating"] = "";
-    } else if (root.dataset["navigating"] !== undefined) {
-      delete root.dataset["navigating"];
-      root.dataset["navigationComplete"] = "";
-      completionTimer = setTimeout(() => delete root.dataset["navigationComplete"], 180);
-    }
-    return () => {
-      if (completionTimer !== undefined) clearTimeout(completionTimer);
-    };
-  }, [navigating]);
-  useEffect(() => {
     if (route.state.status === "failure" && route.state.data !== undefined) {
       showToast(route.state.error.message, "error");
     }
@@ -135,6 +113,7 @@ export function App(): React.JSX.Element {
           account={route.state.data?.account}
           api={route.state.data?.api}
           breadcrumbs={breadcrumbs}
+          navigating={navigating}
           participants={participants}
           status={status}
         />

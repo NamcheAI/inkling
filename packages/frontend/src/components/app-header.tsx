@@ -24,6 +24,8 @@ export interface AppHeaderProps {
   readonly account: AccountControlProps["account"] | undefined;
   readonly api: ApiClientService | undefined;
   readonly breadcrumbs: readonly BreadcrumbItem[];
+  /** Shows a progress bar along the header while the next route loads. */
+  readonly navigating: boolean;
   readonly participants: readonly PresenceDto[];
   readonly status: AppStatus | undefined;
 }
@@ -32,10 +34,12 @@ export function AppHeader({
   account,
   api,
   breadcrumbs,
+  navigating,
   participants,
   status,
 }: AppHeaderProps): React.JSX.Element {
   const [scheme, setScheme] = useState<ColorScheme>(currentColorScheme);
+  const navigation = useNavigationProgress(navigating);
 
   useEffect(() => {
     syncThemeColor();
@@ -56,7 +60,11 @@ export function AppHeader({
   const nextScheme = scheme === "dark" ? "light" : "dark";
 
   return (
-    <Layout.Header className={styles["masthead"]} render={<TopNavigation.Root />}>
+    <Layout.Header
+      className={styles["masthead"]}
+      data-navigation={navigation}
+      render={<TopNavigation.Root />}
+    >
       <TopNavigation.Identity className={styles["identity"]}>
         <nav aria-label="Breadcrumb" className={styles["breadcrumbs"]} data-breadcrumbs="">
           <ol>
@@ -121,7 +129,7 @@ export function AppHeader({
         )}
         {status === undefined ? null : (
           <div aria-live="polite" className={styles["status"]} role="status">
-            <span aria-hidden="true" className={styles["statusLight"]} />
+            <span aria-hidden="true" className={styles["statusLight"]} data-state={status.state} />
             <span data-api-status="">{status.label}</span>
           </div>
         )}
@@ -144,4 +152,19 @@ export function AppHeader({
       </TopNavigation.Actions>
     </Layout.Header>
   );
+}
+
+/** Loading while navigating, then briefly complete so the progress bar can finish and fade. */
+function useNavigationProgress(navigating: boolean): "complete" | "idle" | "loading" {
+  const [progress, setProgress] = useState<"complete" | "idle" | "loading">("idle");
+  useEffect(() => {
+    if (navigating) {
+      setProgress("loading");
+      return;
+    }
+    setProgress((current) => (current === "loading" ? "complete" : current));
+    const timer = setTimeout(() => setProgress("idle"), 180);
+    return () => clearTimeout(timer);
+  }, [navigating]);
+  return progress;
 }
