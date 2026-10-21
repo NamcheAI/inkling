@@ -33,8 +33,8 @@ export interface SettingsDialogProps {
 export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX.Element {
   const [label, setLabel] = useState("Agent access");
   const [keys, setKeys] = useState<readonly ApiKeyDto[]>([]);
-  const [revealedKeys, setRevealedKeys] = useState<Readonly<Record<string, string>>>({});
-  const [visibleKeyIds, setVisibleKeyIds] = useState<readonly string[]>([]);
+  const [revealedKeys, setRevealedKeys] = useState<ReadonlyMap<string, string>>(new Map());
+  const [visibleKeyIds, setVisibleKeyIds] = useState<ReadonlySet<string>>(new Set());
   const [copiedKeyId, setCopiedKeyId] = useState<string>();
   const [revealingKeyId, setRevealingKeyId] = useState<string>();
   const [createOpen, setCreateOpen] = useState(false);
@@ -57,6 +57,17 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
   }, [keyQuery.state.data]);
 
   const activeKeys = keys.filter((key) => key.revokedAt === undefined);
+  const showSecret = (keyId: string, secret: string): void => {
+    setRevealedKeys((current) => new Map(current).set(keyId, secret));
+    setVisibleKeyIds((current) => new Set(current).add(keyId));
+  };
+  const hideSecret = (keyId: string): void => {
+    setVisibleKeyIds((current) => new Set([...current].filter((id) => id !== keyId)));
+  };
+  const forgetSecret = (keyId: string): void => {
+    hideSecret(keyId);
+    setRevealedKeys((current) => new Map([...current].filter(([id]) => id !== keyId)));
+  };
   const submit = (event: React.FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     const normalizedLabel = label.trim();
@@ -64,8 +75,7 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
     createKey.execute(normalizedLabel, {
       onSuccess: (created) => {
         setKeys((current) => [created.metadata, ...current]);
-        setRevealedKeys((current) => ({ ...current, [created.metadata.id]: created.key }));
-        setVisibleKeyIds((current) => [...new Set([...current, created.metadata.id])]);
+        showSecret(created.metadata.id, created.key);
         setCopiedKeyId(undefined);
         setCreateOpen(false);
         setLabel("Agent access");
@@ -74,21 +84,21 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
   };
 
   const toggleKey = (key: ApiKeyDto): void => {
-    if (visibleKeyIds.includes(key.id)) {
-      setVisibleKeyIds((current) => current.filter((id) => id !== key.id));
+    if (visibleKeyIds.has(key.id)) {
+      hideSecret(key.id);
       setCopiedKeyId(undefined);
       return;
     }
-    if (revealedKeys[key.id] !== undefined) {
-      setVisibleKeyIds((current) => [...new Set([...current, key.id])]);
+    const secret = revealedKeys.get(key.id);
+    if (secret !== undefined) {
+      showSecret(key.id, secret);
       return;
     }
     setRevealingKeyId(key.id);
     revealKey.execute(key.id, {
       onFailure: () => setRevealingKeyId(undefined),
       onSuccess: (revealed) => {
-        setRevealedKeys((current) => ({ ...current, [key.id]: revealed.key }));
-        setVisibleKeyIds((current) => [...new Set([...current, key.id])]);
+        showSecret(key.id, revealed.key);
         setRevealingKeyId(undefined);
       },
     });
@@ -155,8 +165,8 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
               </Text>
             ) : null}
             {activeKeys.map((key) => {
-              const secret = revealedKeys[key.id];
-              const visible = visibleKeyIds.includes(key.id) && secret !== undefined;
+              const secret = revealedKeys.get(key.id);
+              const visible = visibleKeyIds.has(key.id) && secret !== undefined;
               return (
                 <article className={styles["key"]} data-api-key={key.id} key={key.id}>
                   <Stack align="stretch" gap="xSmall">
@@ -297,10 +307,7 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
             onFailure: () => setKeyToRevoke(undefined),
             onSuccess: () => {
               setKeys((current) => current.filter((item) => item.id !== keyToRevoke.id));
-              setRevealedKeys((current) =>
-                Object.fromEntries(Object.entries(current).filter(([id]) => id !== keyToRevoke.id)),
-              );
-              setVisibleKeyIds((current) => current.filter((id) => id !== keyToRevoke.id));
+              forgetSecret(keyToRevoke.id);
               setKeyToRevoke(undefined);
             },
           });
