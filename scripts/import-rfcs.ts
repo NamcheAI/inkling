@@ -181,7 +181,7 @@ function prepareRfcs(
   sourceDirectory: string,
 ): Effect.Effect<readonly PreparedRfc[], ImportCommandError> {
   return Effect.gen(function* () {
-    const people = yield* loadPeople(path.join(sourceDirectory, "people.json"));
+    const directoryPeople = yield* loadPeople(path.join(sourceDirectory, "people.json"));
     const rfcDirectory = path.join(sourceDirectory, "rfcs");
     const entries = yield* fileOperation(`read ${rfcDirectory}`, () =>
       readdir(rfcDirectory, { withFileTypes: true }),
@@ -195,12 +195,22 @@ function prepareRfcs(
     }
 
     const now = new Date().toISOString();
-    const documents = yield* Effect.forEach(filenames, (filename) =>
+    const sources = yield* Effect.forEach(filenames, (filename) => {
+      const sourcePath = path.join(rfcDirectory, filename);
+      return fileOperation(`read ${sourcePath}`, () => readFile(sourcePath, "utf8")).pipe(
+        Effect.map((markdown) => ({ filename, markdown, sourcePath })),
+      );
+    });
+    // Names written as `Name <email>` in one RFC fill in `email <email>` placeholders
+    // in others when the people dictionary does not know the address.
+    const firstPass = yield* Effect.forEach(sources, ({ markdown, sourcePath }) =>
+      importEarendilRfc(markdown, { now, people: directoryPeople, sourcePath }).pipe(
+        Effect.mapError(importFailure),
+      ),
+    );
+    const people = withLearnedPeople(directoryPeople, firstPass);
+    const documents = yield* Effect.forEach(sources, ({ filename, markdown, sourcePath }) =>
       Effect.gen(function* () {
-        const sourcePath = path.join(rfcDirectory, filename);
-        const markdown = yield* fileOperation(`read ${sourcePath}`, () =>
-          readFile(sourcePath, "utf8"),
-        );
         const pathNumber = Number(path.basename(filename, ".md"));
         const attachments = yield* loadAttachments(rfcDirectory, pathNumber);
         const imported = yield* importEarendilRfc(markdown, {
@@ -276,10 +286,20 @@ function syncRfc(
       people: rfc.imported.people,
       publish: false,
     };
-    let current = existing ? yield* client.read(documentId) : yield* client.importDocument(request);
+    const desiredMetadata = metadataFor(rfc.imported, relatedDocuments);
+    const shouldPublish = publishAll || desiredMetadata.visibility === "public";
+    // Without attachments the final body is known up front, so the import itself can
+    // publish it and keep the legacy timestamps instead of stamping follow-up edits.
+    const completeImport = !existing && rfc.imported.attachments.length === 0;
+    let current = existing
+      ? yield* client.read(documentId)
+      : yield* client.importDocument(
+          completeImport
+            ? { ...request, body: canonicalBody(rfc.imported, new Map()), publish: shouldPublish }
+            : request,
+        );
 
     const attachmentResult = yield* synchronizeAttachments(client, current, rfc.imported);
-    const desiredMetadata = metadataFor(rfc.imported, relatedDocuments);
     let metadataChanged = false;
     if (!sameMetadata(current.metadata, desiredMetadata)) {
       const metadata = yield* client.metadata(documentId, {
@@ -299,8 +319,7 @@ function syncRfc(
       bodyChanged = true;
     }
 
-    const shouldPublish = publishAll || desiredMetadata.visibility === "public";
-    let publicationChanged = false;
+    let publicationChanged = completeImport && shouldPublish;
     if (shouldPublish) {
       if (current.metadata.publishedRevision === undefined || metadataChanged || bodyChanged) {
         const metadata = yield* client.publish(documentId);
@@ -406,6 +425,32 @@ function sameMetadata(current: DocumentMetadataDto, desired: DesiredMetadata): b
       visibility: current.visibility,
     }) === JSON.stringify(desired)
   );
+}
+
+function withLearnedPeople(
+  directory: readonly PeopleDirectoryRecord[],
+  documents: readonly ImportedDocument[],
+): readonly PeopleDirectoryRecord[] {
+  const known = new Set(
+    directory.flatMap((person) =>
+      [person.email, ...(person.aliases ?? [])].map((email) => email.toLocaleLowerCase("en")),
+    ),
+  );
+  const learned: PeopleDirectoryRecord[] = [];
+  for (const document of documents) {
+    const metadata = document.metadata;
+    for (const person of [
+      ...(metadata.authors ?? []),
+      ...(metadata.reviewers ?? []),
+      ...(metadata.approvers ?? []),
+    ]) {
+      const email = person.email.toLocaleLowerCase("en");
+      if (known.has(email) || person.displayName.toLocaleLowerCase("en") === email) continue;
+      known.add(email);
+      learned.push({ aliases: [], displayName: person.displayName, email });
+    }
+  }
+  return [...directory, ...learned];
 }
 
 function normalizedLabels(labels: readonly string[]): string[] {

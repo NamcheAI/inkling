@@ -2,6 +2,7 @@ import { Data, Effect, Predicate, Schema } from "effect";
 import YAML from "yaml";
 
 import { identifierTag, personId, validatePerson } from "@earendil-works/inkling-core";
+import { makeMarkdownRenderer } from "@earendil-works/inkling-renderer";
 import type {
   CapabilityAccess,
   CreateMetadataInput,
@@ -89,6 +90,7 @@ export function importEarendilRfc(
   return Effect.gen(function* () {
     const parsed = yield* parseFrontmatter(markdown, context.sourcePath);
     const frontmatter = parsed.frontmatter;
+    const sourceBody = parsed.body.replace(/\r\n?/gu, "\n").trimStart();
     const warnings: string[] = [];
     const number = parsePositiveInteger(
       firstValue(frontmatter, ["rfc", "rfc_number", "number"]) ??
@@ -97,7 +99,7 @@ export function importEarendilRfc(
     if (number === undefined) {
       warnings.push("RFC number was not found and must be allocated during import.");
     }
-    const headingTitle = firstHeading(parsed.body);
+    const headingTitle = firstHeading(sourceBody);
     const title =
       normalizedRfcTitle(headingTitle, number) ?? firstString(frontmatter, ["title", "name"]);
     if (title === undefined) {
@@ -134,11 +136,22 @@ export function importEarendilRfc(
       warnings.push(`Unknown visibility ${rawVisibility} was imported as private.`);
     }
     const createdAt = normalizeDate(firstString(frontmatter, ["created", "created_at", "date"]));
-    const updatedAt = normalizeDate(
+    let updatedAt = normalizeDate(
       firstString(frontmatter, ["updated", "updated_at", "last_modified"]),
     );
+    if (createdAt !== undefined && updatedAt !== undefined && updatedAt < createdAt) {
+      warnings.push("The update date precedes the creation date and was raised to match it.");
+      updatedAt = createdAt;
+    }
     const lifecycleState = firstString(frontmatter, ["state", "status"]) ?? "draft";
-    const labels = stringList(firstValue(frontmatter, ["labels", "keywords", "tags"]));
+    // Legacy keyword pages grouped keywords case-insensitively.
+    const labels = [
+      ...new Set(
+        stringList(firstValue(frontmatter, ["labels", "keywords", "tags"])).map((label) =>
+          label.toLocaleLowerCase("en"),
+        ),
+      ),
+    ];
     const relatedRfcNumbers = stringList(
       firstValue(frontmatter, ["related", "related_rfcs", "related_documents"]),
     ).flatMap((value) => {
@@ -149,14 +162,20 @@ export function importEarendilRfc(
     const targetDecisionDate = normalizeDate(
       firstString(frontmatter, ["target_decision_date", "decision_date"]),
     );
-    const body = ensureTitleHeading(
+    const rewrittenBody = ensureTitleHeading(
       normalizeRfcTitleHeading(
-        rewriteLegacyProtectedLinks(rewriteLegacyRfcLinks(parsed.body)),
+        rewriteKnownPersonMailtoLabels(
+          stripImageDimensionTitles(rewriteLegacyProtectedLinks(rewriteLegacyRfcLinks(sourceBody))),
+          people,
+        ),
         title,
         number,
       ),
       title,
     );
+    const resolvedHeadings = yield* resolveExplicitHeadingIds(rewrittenBody);
+    warnings.push(...resolvedHeadings.warnings);
+    const body = resolvedHeadings.markdown;
     const metadata: ImportedMetadataInput = {
       approvers,
       authors,
@@ -237,7 +256,12 @@ export function rewriteLegacyRfcLinks(markdown: string): string {
   );
 }
 
-/** Rewrites links to known legacy source documents to canonical Inkling RFC routes. */
+/**
+ * Rewrites links to known legacy source documents to canonical Inkling RFC routes.
+ *
+ * Link labels that Google Docs generated for the linked document (its URL or its
+ * "0007 - Title" chip text) become "RFC 0007", matching the legacy RFC site.
+ */
 export function rewriteKnownRfcSourceLinks(
   markdown: string,
   rfcs: readonly {
@@ -245,21 +269,108 @@ export function rewriteKnownRfcSourceLinks(
     readonly rfcNumber?: number | undefined;
   }[],
 ): string {
-  const routes = new Map<string, string>();
+  const numbers = new Map<string, number>();
   for (const rfc of rfcs) {
     if (rfc.legacySourceUrl === undefined || rfc.rfcNumber === undefined) continue;
     const key = legacySourceKey(rfc.legacySourceUrl);
-    if (key !== undefined) {
-      routes.set(key, `/rfc/${String(rfc.rfcNumber).padStart(4, "0")}`);
-    }
+    if (key !== undefined) numbers.set(key, rfc.rfcNumber);
   }
   return markdown.replace(
-    /(\]\(\s*<?)(https?:\/\/[^\s)>]+)(>?[^)]*\))/giu,
-    (match, prefix: string, target: string, suffix: string) => {
-      const route = routes.get(legacySourceKey(target) ?? "");
-      return route === undefined ? match : `${prefix}${route}${suffix}`;
+    /(?<!!)\[((?:\\.|[^\\\]\n])*)\](\(\s*<?)(https?:\/\/[^\s)>]+)(>?[^)]*\))/giu,
+    (match, label: string, prefix: string, target: string, suffix: string) => {
+      const key = legacySourceKey(target);
+      const number = numbers.get(key ?? "");
+      if (key === undefined || number === undefined) return match;
+      const route = `/rfc/${formatRfcNumber(number)}`;
+      const rewrittenLabel = isDefaultRfcLinkLabel(label, target, key, number)
+        ? `RFC ${formatRfcNumber(number)}`
+        : label;
+      return `[${rewrittenLabel}]${prefix}${route}${suffix}`;
     },
   );
+}
+
+/** Replaces Google Docs person-chip labels such as `[a@b.c](mailto:a@b.c)` with known names. */
+export function rewriteKnownPersonMailtoLabels(
+  markdown: string,
+  directory: readonly PeopleDirectoryRecord[],
+): string {
+  return markdown.replace(
+    /\[([^\]\n]+)\]\(\s*<?mailto:([^\s)>?]+)(\?[^\s)>]*)?(>?\s*\))/giu,
+    (match, label: string, address: string, query: string | undefined, suffix: string) => {
+      const email = safeDecodeUriComponent(address).trim().toLocaleLowerCase("en");
+      if (label.replace(/\\(.)/gu, "$1").trim().toLocaleLowerCase("en") !== email) return match;
+      const known = findDirectoryPerson(directory, [email]);
+      if (known === undefined || known.displayName.trim() === "") return match;
+      return `[${escapeMarkdownLabel(known.displayName)}](mailto:${address}${query ?? ""}${suffix}`;
+    },
+  );
+}
+
+/** Removes Google Docs `"=WIDTHxHEIGHT"` image size titles that would render as tooltips. */
+export function stripImageDimensionTitles(markdown: string): string {
+  return markdown
+    .replace(
+      /^( {0,3}\[[^\]\n]+\]:[ \t]*(?:<[^>\n]*>|\S+))[ \t]+(?:"=\d{1,6}x\d{1,6}"|'=\d{1,6}x\d{1,6}')[ \t]*$/gmu,
+      "$1",
+    )
+    .replace(
+      /(!\[[^\]\n]*\]\(\s*(?:<[^>\n]*>|[^\s)]+))[ \t]+(?:"=\d{1,6}x\d{1,6}"|'=\d{1,6}x\d{1,6}')(\s*\))/gu,
+      "$1$2",
+    );
+}
+
+/**
+ * Removes Pandoc-style `{#id}` heading attributes emitted by Google Docs and points
+ * in-document links at the anchors the Inkling renderer generates instead.
+ */
+export function resolveExplicitHeadingIds(
+  markdown: string,
+): Effect.Effect<{ readonly markdown: string; readonly warnings: readonly string[] }> {
+  const stripped = stripExplicitHeadingIds(markdown);
+  if (stripped.headings.length === 0) {
+    return Effect.succeed({ markdown, warnings: [] });
+  }
+  return makeMarkdownRenderer()
+    .render(stripped.markdown, { sourcePositions: true })
+    .pipe(
+      Effect.map(({ html }) => {
+        const generated = new Map<number, string>();
+        for (const match of html.matchAll(
+          /<h[1-6] id="([^"]*)"[^>]*?\sdata-inkling-source-start="(\d+)"/gu,
+        )) {
+          if (match[1] !== undefined && match[2] !== undefined) {
+            generated.set(Number(match[2]), match[1]);
+          }
+        }
+        const anchors = new Map<string, string>();
+        for (const heading of stripped.headings) {
+          const id = generated.get(heading.offset);
+          if (id !== undefined && id !== heading.id && !anchors.has(heading.id)) {
+            anchors.set(heading.id, id);
+          }
+        }
+        return {
+          markdown:
+            anchors.size === 0
+              ? stripped.markdown
+              : stripped.markdown.replace(
+                  /(\]\(\s*<?#)([^\s)>]+)/gu,
+                  (match, prefix: string, anchor: string) => {
+                    const replacement = anchors.get(anchor);
+                    return replacement === undefined ? match : `${prefix}${replacement}`;
+                  },
+                ),
+          warnings: [],
+        };
+      }),
+      Effect.orElseSucceed(() => ({
+        markdown: stripped.markdown,
+        warnings: [
+          "Heading anchors could not be verified because the Markdown did not render; in-document links may need review.",
+        ],
+      })),
+    );
 }
 
 function parseFrontmatter(
@@ -303,6 +414,85 @@ function parseFrontmatter(
   );
 }
 
+function stripExplicitHeadingIds(markdown: string): {
+  readonly markdown: string;
+  readonly headings: readonly { readonly id: string; readonly offset: number }[];
+} {
+  const headings: { readonly id: string; readonly offset: number }[] = [];
+  const output: string[] = [];
+  let offset = 0;
+  let fence: { readonly marker: string; readonly length: number } | undefined;
+  for (const line of markdown.split("\n")) {
+    let result = line;
+    const boundary = /^ {0,3}(`{3,}|~{3,})/u.exec(line)?.[1];
+    if (boundary !== undefined) {
+      if (fence === undefined) fence = { length: boundary.length, marker: boundary[0] ?? "" };
+      else if (boundary[0] === fence.marker && boundary.length >= fence.length) fence = undefined;
+    } else if (fence === undefined) {
+      const heading = /^( {0,3}#{1,6}[ \t]+.*?)[ \t]+\{#([^\s}]+)(?:[ \t]+[^{}]*)?\}[ \t]*$/u.exec(
+        line,
+      );
+      if (heading?.[1] !== undefined && heading[2] !== undefined) {
+        result = heading[1].replace(/[ \t]+#+[ \t]*$/u, "");
+        headings.push({ id: heading[2], offset });
+      }
+    }
+    output.push(result);
+    offset += result.length + 1;
+  }
+  return { headings, markdown: output.join("\n") };
+}
+
+function isDefaultRfcLinkLabel(
+  rawLabel: string,
+  target: string,
+  targetKey: string,
+  number: number,
+): boolean {
+  const label = rawLabel.replace(/\\(.)/gu, "$1").replace(/\s+/gu, " ").trim();
+  if (label === "") return false;
+  if (/^https?:\/\//iu.test(label)) {
+    return (
+      legacySourceKey(label) === targetKey ||
+      label.replace(/\/$/u, "") === target.replace(/\/$/u, "")
+    );
+  }
+  const referenced =
+    /^rfc\s+0*(\d+)\b/iu.exec(label)?.[1] ?? /^0*(\d+)\s*[-:–—]\s*\S/u.exec(label)?.[1];
+  return referenced !== undefined && Number(referenced) === number;
+}
+
+function findDirectoryPerson(
+  directory: readonly PeopleDirectoryRecord[],
+  identities: readonly string[],
+): PeopleDirectoryRecord | undefined {
+  const normalized = identities.map((value) => value.toLocaleLowerCase("en").trim());
+  return directory.find((person) => {
+    const aliases = new Set(
+      [person.displayName, person.email, ...(person.aliases ?? [])].map((value) =>
+        value.toLocaleLowerCase("en").trim(),
+      ),
+    );
+    return normalized.some((identity) => aliases.has(identity));
+  });
+}
+
+function escapeMarkdownLabel(value: string): string {
+  return value.replace(/([\\[\]])/gu, "\\$1");
+}
+
+function safeDecodeUriComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function formatRfcNumber(number: number): string {
+  return String(number).padStart(4, "0");
+}
+
 function normalizePeople(
   input: unknown,
   directory: readonly PeopleDirectoryRecord[],
@@ -310,17 +500,10 @@ function normalizePeople(
   return Effect.forEach(stringList(input), (raw) =>
     Effect.gen(function* () {
       const parsed = parseImportedPerson(raw);
-      const identities = [parsed.displayName, parsed.email]
-        .filter((value): value is string => value !== undefined)
-        .map((value) => value.toLocaleLowerCase("en").trim());
-      const known = directory.find((person) => {
-        const aliases = new Set(
-          [person.displayName, person.email, ...(person.aliases ?? [])].map((value) =>
-            value.toLocaleLowerCase("en").trim(),
-          ),
-        );
-        return identities.some((identity) => aliases.has(identity));
-      });
+      const known = findDirectoryPerson(
+        directory,
+        [parsed.displayName, parsed.email].filter((value): value is string => value !== undefined),
+      );
       const email = (
         known?.email ??
         parsed.email ??
@@ -390,7 +573,10 @@ function decodeLegacyComments(
 }
 
 function firstHeading(markdown: string): string | undefined {
-  return /^#\s+(.+)$/mu.exec(markdown)?.[1]?.trim();
+  return /^#\s+(.+)$/mu
+    .exec(markdown)?.[1]
+    ?.replace(/[ \t]+\{#[^\s}]+(?:[ \t]+[^{}]*)?\}[ \t]*$/u, "")
+    .trim();
 }
 
 function normalizedRfcTitle(
@@ -473,8 +659,13 @@ function parseImportedPerson(value: string): {
   if (bracketed !== null) {
     const displayName = bracketed[1]?.trim();
     const email = bracketed[2]?.trim();
+    // Google Docs exports unnamed people as `email <email>`.
+    const placeholder =
+      displayName !== undefined &&
+      email !== undefined &&
+      displayName.toLocaleLowerCase("en") === email.toLocaleLowerCase("en");
     return {
-      displayName: displayName === "" ? undefined : displayName,
+      displayName: displayName === "" || placeholder ? undefined : displayName,
       email: email === "" ? undefined : email,
     };
   }

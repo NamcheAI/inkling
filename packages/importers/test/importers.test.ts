@@ -169,3 +169,88 @@ test("known legacy source links become canonical RFC links", () => {
     "[prior](/rfc/0007) [external](https://example.com/)",
   );
 });
+
+test("Google Docs heading IDs are removed and in-document links follow rendered anchors", async () => {
+  const imported = await Effect.runPromise(
+    importEarendilRfc(
+      `---
+number: 40
+---
+
+# RFC 0040 Sync {#title-id}
+
+See [storage](#storage) and [caching](#cache-section).
+
+## Overview
+
+### Storage {#storage}
+
+\`\`\`md
+## Kept {#kept}
+\`\`\`
+
+### Caching Layer {#cache-section}
+`,
+      { sourcePath: "rfcs/0040.md" },
+    ),
+  );
+
+  assert.equal(imported.metadata.title, "Sync");
+  assert.equal(imported.body.startsWith("# Sync\n\nSee "), true);
+  assert.match(imported.body, /\[storage\]\(#storage\) and \[caching\]\(#caching-layer\)/u);
+  assert.match(imported.body, /^### Storage$/mu);
+  assert.match(imported.body, /^### Caching Layer$/mu);
+  assert.match(imported.body, /^## Kept \{#kept\}$/mu);
+});
+
+test("Google Docs image size titles and person chips are normalized", async () => {
+  const imported = await Effect.runPromise(
+    importEarendilRfc(
+      `---
+number: 5
+authors:
+  - "Carlotta@example.com <carlotta@example.com>"
+keywords: [Radius, radius, Design]
+created: "2024-04-17"
+updated: "2024-03-07"
+---
+# RFC 0005 Images
+
+![][image1]  
+![inline](_img/b.png "=10x20")
+Ask [armin@example.com](mailto:armin@example.com) or [Armin](mailto:armin@example.com).
+
+[image1]: <_img/a.png> "=624x272"
+`,
+      {
+        people: [{ displayName: "Armin Ronacher", email: "armin@example.com" }],
+        sourcePath: "rfcs/0005.md",
+      },
+    ),
+  );
+
+  assert.match(imported.body, /^\[image1\]: <_img\/a\.png>$/mu);
+  assert.match(imported.body, /!\[inline\]\(_img\/b\.png\)/u);
+  assert.match(imported.body, /Ask \[Armin Ronacher\]\(mailto:armin@example\.com\) or \[Armin\]/u);
+  assert.deepEqual(imported.metadata.authors?.[0]?.displayName, "carlotta@example.com");
+  assert.deepEqual(imported.metadata.labels, ["radius", "design"]);
+  assert.equal(imported.metadata.updatedAt, imported.metadata.createdAt);
+  assert.equal(imported.warnings.length, 1);
+});
+
+test("default Google Docs RFC link labels become RFC numbers", () => {
+  const source = "https://docs.google.com/document/d/legacy-id/edit";
+  assert.equal(
+    rewriteKnownRfcSourceLinks(
+      [
+        `[0007 \\- Prior Work](${source}?tab=t.0)`,
+        `[RFC 7 prior](${source})`,
+        `[${source}](${source})`,
+        `[custom words](${source})`,
+        `[0008 - Other](${source})`,
+      ].join(" "),
+      [{ legacySourceUrl: source, rfcNumber: 7 }],
+    ),
+    "[RFC 0007](/rfc/0007) [RFC 0007](/rfc/0007) [RFC 0007](/rfc/0007) [custom words](/rfc/0007) [0008 - Other](/rfc/0007)",
+  );
+});

@@ -165,6 +165,9 @@ importers:
       '@earendil-works/inkling-core':
         specifier: workspace:*
         version: link:../core
+      '@earendil-works/inkling-renderer':
+        specifier: workspace:*
+        version: link:../renderer
       effect:
         specifier: 3.22.1
         version: 3.22.1
