@@ -28,10 +28,6 @@ body {
   isolation: isolate;
 }
 
-#app {
-  min-height: calc(100vh - var(--masthead-height));
-}
-
 ::selection {
   background: color-mix(
     in oklch,

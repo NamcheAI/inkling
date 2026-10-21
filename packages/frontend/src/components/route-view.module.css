@@ -1,10 +1,5 @@
-.loading {
-  min-block-size: calc(100dvh - var(--masthead-height));
-}
-
 .fatal {
   display: grid;
-  min-block-size: calc(100dvh - var(--masthead-height));
   place-items: center;
   padding-block: var(--page-padding);
 }

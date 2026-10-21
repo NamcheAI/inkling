@@ -87,7 +87,7 @@ export function RouteView({ navigationKey, refresh, state }: RouteViewProps): Re
         </Layout.Main>
       );
     }
-    return <Layout.Main aria-busy="true" className={styles["loading"]} id="app" tabIndex={-1} />;
+    return <LoadingScreen />;
   }
 
   switch (model.screen) {
@@ -117,9 +117,7 @@ export function RouteView({ navigationKey, refresh, state }: RouteViewProps): Re
       );
     case "reader":
       return (
-        <Suspense
-          fallback={<Layout.Main aria-busy="true" className={styles["loading"]} id="app" />}
-        >
+        <Suspense fallback={<LoadingScreen />}>
           <ReaderScreen
             document={model.document}
             publicDocument={model.publicDocument}
@@ -129,9 +127,7 @@ export function RouteView({ navigationKey, refresh, state }: RouteViewProps): Re
       );
     case "editor":
       return (
-        <Suspense
-          fallback={<Layout.Main aria-busy="true" className={styles["loading"]} id="app" />}
-        >
+        <Suspense fallback={<LoadingScreen />}>
           <EditorScreen
             account={model.account}
             api={model.api}
@@ -144,6 +140,10 @@ export function RouteView({ navigationKey, refresh, state }: RouteViewProps): Re
         </Suspense>
       );
   }
+}
+
+function LoadingScreen(): React.JSX.Element {
+  return <Layout.Main aria-busy="true" id="app" tabIndex={-1} />;
 }
 
 export function preloadDocumentScreen(screen: "editor" | "reader"): Promise<unknown> {
