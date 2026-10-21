@@ -106,3 +106,59 @@ test("theme JSON rejects font imports without a plain host", async () => {
 
   assert.equal(Either.isLeft(result), true);
 });
+
+test("shape, strong weight, and brand variables appear only when a theme sets them", () => {
+  const logo = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg"/>')}`;
+  const shaped = {
+    ...defaultTheme,
+    brand: { logo, logoAspectRatio: 5.25 },
+    fonts: { ...defaultTheme.fonts, strongWeight: 500 },
+    shape: {
+      hairline: "0.5px",
+      marker: "1px",
+      radiusButton: "40px",
+      radiusChip: "100px",
+      radiusControl: "12px",
+      radiusSurface: "0.75rem",
+    },
+  };
+  const stylesheet = themeStylesheet(shaped);
+
+  assert.match(stylesheet, /--stroke-hairline: 0\.5px;/u);
+  assert.match(stylesheet, /--radius-surface: 0\.75rem;/u);
+  assert.match(stylesheet, /--font-weight-strong: 500;/u);
+  assert.ok(stylesheet.includes(`--brand-logo: url("${logo}");`));
+  assert.match(stylesheet, /--brand-logo-display: inline-block;/u);
+  assert.doesNotMatch(
+    themeStylesheet(defaultTheme),
+    /--stroke-|--radius-|--brand-|--font-weight-/u,
+  );
+});
+
+test("theme JSON rejects remote logos and lengths outside px and rem", async () => {
+  const remoteLogo = {
+    ...defaultTheme,
+    brand: { logo: "https://example.com/logo.svg", logoAspectRatio: 2 },
+  };
+  const invalidLength = {
+    ...defaultTheme,
+    shape: {
+      hairline: "1px;color:red",
+      marker: "1px",
+      radiusButton: "1px",
+      radiusChip: "1px",
+      radiusControl: "1px",
+      radiusSurface: "1px",
+    },
+  };
+
+  const results = await Promise.all(
+    [remoteLogo, invalidLength].map((theme) =>
+      Effect.runPromise(Effect.either(decodeThemeJson(JSON.stringify(theme)))),
+    ),
+  );
+  assert.deepEqual(
+    results.map((result) => Either.isLeft(result)),
+    [true, true],
+  );
+});

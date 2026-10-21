@@ -4,8 +4,8 @@
   max-width: 100%;
   align-items: center;
   padding: 0.28rem 0.42rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 2px;
+  border: var(--stroke-hairline, 1px) solid var(--border-strong);
+  border-radius: var(--radius-chip, 2px);
   background: var(--surface-muted);
   color: var(--muted);
   font: var(--font-caption) / 1 var(--mono);

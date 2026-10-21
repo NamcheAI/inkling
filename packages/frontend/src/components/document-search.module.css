@@ -25,8 +25,8 @@
   align-items: center;
   gap: 0.55rem;
   padding: 0 0.75rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 2px;
+  border: var(--stroke-hairline, 1px) solid var(--border-strong);
+  border-radius: var(--radius-control, 2px);
   background: var(--surface);
 }
 
@@ -65,7 +65,7 @@
 
 .control kbd,
 .control button {
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
   border-radius: 2px;
   background: var(--surface-muted);
   color: var(--muted);
@@ -94,9 +94,9 @@
   left: 0;
   max-height: min(72dvh, 34rem);
   overflow: auto;
-  border: 1px solid var(--border-strong);
-  border-top: 3px solid var(--accent);
-  border-radius: 3px;
+  border: var(--stroke-hairline, 1px) solid var(--border-strong);
+  border-top: var(--stroke-marker, 3px) solid var(--accent);
+  border-radius: var(--radius-surface, 3px);
   background: var(--surface);
   box-shadow: var(--shadow);
 }
@@ -105,7 +105,7 @@
   display: grid;
   gap: 0.55rem;
   padding: 0.75rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--stroke-hairline, 1px) solid var(--border);
   background: var(--surface-muted);
 }
 
@@ -128,7 +128,7 @@
   align-items: baseline;
   gap: 0.45rem;
   padding: 0.4rem 0.5rem;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
   border-radius: 2px;
   background: var(--surface);
   color: var(--muted);

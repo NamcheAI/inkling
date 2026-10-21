@@ -8,7 +8,8 @@
   width: min(100%, 78rem);
   margin: 0 auto;
   padding: 1.5rem 0 2rem;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
+  border-radius: var(--radius-surface, 0);
   background: var(--surface);
   box-shadow: 0 10px 30px var(--shadow-soft);
 }
@@ -57,7 +58,7 @@
   gap: 1.25rem;
   margin: 0;
   padding: 0 0 1.5rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--stroke-hairline, 1px) solid var(--border);
 }
 
 .folio {
@@ -88,8 +89,8 @@
 .visibilityChip {
   display: inline-flex;
   width: max-content;
-  border: 1px solid var(--border-strong);
-  border-radius: 2px;
+  border: var(--stroke-hairline, 1px) solid var(--border-strong);
+  border-radius: var(--radius-chip, 2px);
   background: var(--surface-muted);
   color: var(--muted);
   font: var(--font-caption) / 1 var(--mono);
@@ -136,8 +137,8 @@
 
 .labels a {
   padding: 0.22rem 0.42rem;
-  border: 1px solid var(--border);
-  border-radius: 2px;
+  border: var(--stroke-hairline, 1px) solid var(--border);
+  border-radius: var(--radius-chip, 2px);
   color: var(--muted);
   font: var(--font-caption) / 1.2 var(--mono);
   letter-spacing: 0.03em;
@@ -158,7 +159,7 @@
   grid-template-columns: 9rem minmax(0, 1fr);
   gap: 1.25rem;
   padding: 0.7rem 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--stroke-hairline, 1px) solid var(--border);
 }
 
 .metadataRow dt {
@@ -196,7 +197,7 @@
   position: sticky;
   top: 4.75rem;
   padding-left: 1rem;
-  border-left: 1px solid var(--border);
+  border-left: var(--stroke-hairline, 1px) solid var(--border);
   color: var(--muted);
   font: 0.95rem/1.42 var(--serif);
 }
@@ -204,7 +205,7 @@
 .toc > p {
   margin: 0 0 0.75rem;
   font-size: var(--font-caption);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong, 600);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -249,7 +250,7 @@
 
 .toc a[aria-current="location"] {
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong, 600);
 }
 
 .toc a:hover {
@@ -278,7 +279,7 @@
   order: -1;
   padding: 0.8rem 0 1rem;
   overflow: hidden;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--stroke-hairline, 1px) solid var(--border);
   border-left: 0;
 }
 
@@ -308,7 +309,7 @@
   max-width: 18rem;
   padding: 0.35rem 0.5rem;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
   border-radius: 2px;
   background: var(--surface-muted);
   text-overflow: ellipsis;
@@ -345,7 +346,7 @@
     order: -1;
     padding: 0.8rem 0 1rem;
     overflow: hidden;
-    border-bottom: 1px solid var(--border);
+    border-bottom: var(--stroke-hairline, 1px) solid var(--border);
     border-left: 0;
   }
 
@@ -379,7 +380,7 @@
     max-width: 18rem;
     padding: 0.35rem 0.5rem;
     overflow: hidden;
-    border: 1px solid var(--border);
+    border: var(--stroke-hairline, 1px) solid var(--border);
     border-radius: 2px;
     background: var(--surface-muted);
     text-overflow: ellipsis;

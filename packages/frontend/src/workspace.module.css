@@ -3,7 +3,8 @@
   min-height: 0;
   margin: 1.25rem auto 3rem;
   padding: 1.4rem 1.5rem 1.8rem;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
+  border-radius: var(--radius-surface, 0);
   background: var(--surface);
   box-shadow: 0 10px 30px var(--shadow-soft);
 }

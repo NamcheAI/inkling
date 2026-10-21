@@ -15,6 +15,28 @@ const FontImport = Schema.String.pipe(
   Schema.maxLength(2_000),
   Schema.pattern(/^https:\/\/[a-z\d.-]+(?::\d+)?(?:\/[^\s\\"'(){}]*)?$/iu),
 );
+const FontWeight = Schema.Number.pipe(Schema.int(), Schema.between(100, 900));
+const CssLength = Schema.String.pipe(Schema.pattern(/^(?:\d+(?:\.\d+)?|\.\d+)(?:px|rem)$/u));
+// The logo is drawn as a CSS mask in the text colour, so only inline SVG is accepted:
+// a remote mask image would need CORS and could change after the theme is reviewed.
+const LogoSource = Schema.String.pipe(
+  Schema.maxLength(32_000),
+  Schema.pattern(/^data:image\/svg\+xml;base64,[A-Za-z\d+/]+={0,2}$/u),
+);
+
+const ShapeSchema = Schema.Struct({
+  hairline: CssLength,
+  marker: CssLength,
+  radiusButton: CssLength,
+  radiusChip: CssLength,
+  radiusControl: CssLength,
+  radiusSurface: CssLength,
+});
+
+const BrandSchema = Schema.Struct({
+  logo: LogoSource,
+  logoAspectRatio: Schema.Number.pipe(Schema.positive()),
+});
 
 // Google Fonts stylesheets load their font files from a separate origin.
 const fontFileOrigins: Readonly<Record<string, string>> = {
@@ -107,17 +129,20 @@ const ThemeModeSchema = Schema.Struct({
 
 export const ThemeConfigurationSchema = Schema.Struct({
   $schema: Schema.optional(Schema.String),
+  brand: Schema.optional(BrandSchema),
   dark: ThemeModeSchema,
   fonts: Schema.Struct({
     code: FontFamily,
     heading: FontFamily,
     imports: Schema.Array(FontImport).pipe(Schema.maxItems(8)),
     prose: FontFamily,
+    strongWeight: Schema.optional(FontWeight),
     ui: FontFamily,
   }),
   light: ThemeModeSchema,
   name: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(100)),
   schemaVersion: Schema.Literal(1),
+  shape: Schema.optional(ShapeSchema),
 });
 
 export type ThemeConfiguration = typeof ThemeConfigurationSchema.Type;
@@ -564,10 +589,37 @@ export function themeStylesheet(theme: ThemeConfiguration): string {
     `  --heading: ${theme.fonts.heading};`,
     `  --sans: ${theme.fonts.ui};`,
     `  --mono: ${theme.fonts.code};`,
+    ...optionalVariables(theme),
   ].join("\n");
   const light = modeVariables(theme.light);
   const dark = modeVariables(theme.dark);
   return `${imports}${imports === "" ? "" : "\n\n"}:root {\n  color-scheme: light;\n${fonts}\n${light}\n}\n\n:root[data-theme="dark"] {\n  color-scheme: dark;\n${dark}\n}\n\n@media (prefers-color-scheme: dark) {\n  :root:not([data-theme]) {\n    color-scheme: dark;\n${dark}\n  }\n}\n`;
+}
+
+// Optional settings emit variables only when present: the stylesheets fall back
+// to their own built-in values, so themes without them render unchanged.
+function optionalVariables(theme: ThemeConfiguration): readonly string[] {
+  const { brand, fonts, shape } = theme;
+  return [
+    ...(fonts.strongWeight === undefined ? [] : [`  --font-weight-strong: ${fonts.strongWeight};`]),
+    ...(shape === undefined
+      ? []
+      : [
+          `  --stroke-hairline: ${shape.hairline};`,
+          `  --stroke-marker: ${shape.marker};`,
+          `  --radius-button: ${shape.radiusButton};`,
+          `  --radius-chip: ${shape.radiusChip};`,
+          `  --radius-control: ${shape.radiusControl};`,
+          `  --radius-surface: ${shape.radiusSurface};`,
+        ]),
+    ...(brand === undefined
+      ? []
+      : [
+          `  --brand-logo: url("${brand.logo}");`,
+          `  --brand-logo-aspect-ratio: ${brand.logoAspectRatio};`,
+          "  --brand-logo-display: inline-block;",
+        ]),
+  ];
 }
 
 export function themeContentSecurityPolicy(theme: ThemeConfiguration): string {

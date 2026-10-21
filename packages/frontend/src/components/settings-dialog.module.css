@@ -23,14 +23,14 @@
   display: grid;
   gap: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--border);
+  border-top: var(--stroke-hairline, 1px) solid var(--border);
 }
 
 .list h3,
 .create h3 {
   margin: 0;
   font-size: 1.05rem;
-  font-weight: 650;
+  font-weight: var(--font-weight-strong, 650);
 }
 
 .list p,
@@ -59,7 +59,7 @@
   min-width: 1.5rem;
   height: 1.5rem;
   flex: 0 0 auto;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
   border-radius: 50%;
   color: var(--muted);
   font: var(--font-caption) / 1 var(--mono);
@@ -70,7 +70,7 @@
   display: grid;
   gap: 0.75rem;
   padding: 1rem;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
   background: color-mix(in oklch, var(--surface) 92%, var(--accent-soft));
 }
 
@@ -102,7 +102,7 @@
   margin: 0;
   overflow: auto;
   padding: 0.65rem 0.75rem;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
   background: var(--surface-muted);
   color: var(--text);
   font: var(--font-caption) / 1.5 var(--mono);
@@ -152,7 +152,7 @@
 
 .safety {
   padding-top: 1rem;
-  border-top: 1px solid var(--border);
+  border-top: var(--stroke-hairline, 1px) solid var(--border);
   font-size: var(--font-small);
 }
 

@@ -30,7 +30,7 @@
 
 .body :where(h1, h2, h3, h4) {
   margin: 0.9em 0 0.35em;
-  font-weight: 600;
+  font-weight: var(--font-weight-strong, 600);
   letter-spacing: -0.035em;
   line-height: 1.15;
   scroll-margin-top: 5rem;
@@ -69,15 +69,15 @@
 
 .body blockquote {
   padding-left: 1rem;
-  border-left: 3px solid var(--border-strong);
+  border-left: var(--stroke-marker, 3px) solid var(--border-strong);
   color: var(--muted);
 }
 
 .body pre {
   overflow: auto;
   padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  border: var(--stroke-hairline, 1px) solid var(--border);
+  border-radius: var(--radius-surface, 3px);
   background: var(--code-background);
   color: var(--code-text);
   font: var(--font-ui) / 1.55 var(--mono);
@@ -85,7 +85,7 @@
 
 .body :not(pre) > code {
   padding: 0.1em 0.3em;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
   border-radius: 2px;
   background: var(--surface-muted);
   font-family: var(--mono);
@@ -99,7 +99,7 @@
 
 .body :where(td, th) {
   padding: 0.45rem 0.7rem;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
   text-align: left;
 }
 
@@ -108,7 +108,7 @@
   min-height: 12rem;
   overflow: hidden;
   padding: 1rem;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
   background: var(--mermaid-background);
 }
 
@@ -152,7 +152,7 @@
 
 .body :global(.inkling-mermaid__controls button) {
   padding: 0.35rem 0.55rem;
-  border: 1px solid var(--mermaid-primary-border);
+  border: var(--stroke-hairline, 1px) solid var(--mermaid-primary-border);
   background: var(--mermaid-primary);
   color: var(--mermaid-primary-text);
 }

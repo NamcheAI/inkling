@@ -13,8 +13,8 @@
 
 .control {
   width: 100%;
-  border: 1px solid var(--border-strong);
-  border-radius: 3px;
+  border: var(--stroke-hairline, 1px) solid var(--border-strong);
+  border-radius: var(--radius-control, 3px);
   background: var(--surface);
   color: inherit;
   font: inherit;

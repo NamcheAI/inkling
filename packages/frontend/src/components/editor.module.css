@@ -14,7 +14,7 @@
   justify-content: flex-end;
   gap: 1.5rem;
   padding: 0.8rem var(--page-padding);
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--stroke-hairline, 1px) solid var(--border);
   background: var(--surface);
 }
 
@@ -35,7 +35,7 @@
 .trashIndicator a {
   flex: none;
   color: var(--danger);
-  font: 600 var(--font-caption) / 1 var(--mono);
+  font: var(--font-weight-strong, 600) var(--font-caption) / 1 var(--mono);
   letter-spacing: 0.08em;
   text-decoration: none;
   text-transform: uppercase;
@@ -65,8 +65,8 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.45rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  border: var(--stroke-hairline, 1px) solid var(--border);
+  border-radius: var(--radius-control, 3px);
   background: var(--surface);
   color: var(--muted);
   cursor: pointer;
@@ -140,7 +140,7 @@
 }
 
 .previewPane {
-  border-left: 1px solid var(--border);
+  border-left: var(--stroke-hairline, 1px) solid var(--border);
   background: var(--page);
 }
 
@@ -150,7 +150,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 1rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--stroke-hairline, 1px) solid var(--border);
   background: var(--surface-muted);
   color: var(--muted);
   font: var(--font-caption) / 1.3 var(--mono);
@@ -174,7 +174,7 @@
   min-height: 100%;
   margin: 0 auto;
   padding: 1.25rem;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
   background: var(--surface);
   box-shadow: 0 8px 24px var(--shadow-soft);
 }
@@ -347,7 +347,7 @@
   position: relative;
   display: inline;
   margin-inline: -1px;
-  border-left: 2px solid var(--remote-color);
+  border-left: var(--stroke-marker, 2px) solid var(--remote-color);
   pointer-events: none;
 }
 
@@ -361,7 +361,7 @@
   background: var(--remote-color);
   box-shadow: 0 2px 8px var(--shadow-strong);
   color: var(--participant-text);
-  font: 650 var(--font-caption) / 1.15 var(--mono);
+  font: var(--font-weight-strong, 650) var(--font-caption) / 1.15 var(--mono);
   white-space: nowrap;
 }
 

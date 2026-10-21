@@ -11,9 +11,71 @@
     "name": { "type": "string", "minLength": 1, "maxLength": 100 },
     "fonts": { "$ref": "#/$defs/fonts" },
     "light": { "$ref": "#/$defs/mode" },
-    "dark": { "$ref": "#/$defs/mode" }
+    "dark": { "$ref": "#/$defs/mode" },
+    "shape": { "$ref": "#/$defs/shape" },
+    "brand": { "$ref": "#/$defs/brand" }
   },
   "$defs": {
+    "length": {
+      "type": "string",
+      "description": "A CSS length in px or rem.",
+      "pattern": "^(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:px|rem)$"
+    },
+    "shape": {
+      "type": "object",
+      "description": "Optional stroke weights and corner radii. Without it, every component keeps its built-in value.",
+      "additionalProperties": false,
+      "required": [
+        "hairline",
+        "marker",
+        "radiusButton",
+        "radiusChip",
+        "radiusControl",
+        "radiusSurface"
+      ],
+      "properties": {
+        "hairline": {
+          "$ref": "#/$defs/length",
+          "description": "Rules, outlines and field borders."
+        },
+        "marker": {
+          "$ref": "#/$defs/length",
+          "description": "Accent bars on comments, results and toasts."
+        },
+        "radiusButton": { "$ref": "#/$defs/length" },
+        "radiusChip": {
+          "$ref": "#/$defs/length",
+          "description": "State, visibility and label chips."
+        },
+        "radiusControl": {
+          "$ref": "#/$defs/length",
+          "description": "Inputs, search and disclosure controls."
+        },
+        "radiusSurface": {
+          "$ref": "#/$defs/length",
+          "description": "Dialogs, menus, popovers, toasts and code blocks."
+        }
+      }
+    },
+    "brand": {
+      "type": "object",
+      "description": "Optional logo shown before the product name, drawn in the text color.",
+      "additionalProperties": false,
+      "required": ["logo", "logoAspectRatio"],
+      "properties": {
+        "logo": {
+          "type": "string",
+          "description": "A base64 SVG data URI; its shape is used as a mask.",
+          "maxLength": 32000,
+          "pattern": "^data:image/svg\\+xml;base64,[A-Za-z0-9+/]+={0,2}$"
+        },
+        "logoAspectRatio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Width divided by height."
+        }
+      }
+    },
     "color": {
       "type": "string",
       "description": "An OKLCH CSS color, optionally with alpha.",
@@ -35,7 +97,13 @@
         "prose": { "type": "string", "minLength": 1 },
         "heading": { "type": "string", "minLength": 1 },
         "ui": { "type": "string", "minLength": 1 },
-        "code": { "type": "string", "minLength": 1 }
+        "code": { "type": "string", "minLength": 1 },
+        "strongWeight": {
+          "type": "integer",
+          "description": "Optional weight for emphasized interface text.",
+          "minimum": 100,
+          "maximum": 900
+        }
       }
     },
     "state": {

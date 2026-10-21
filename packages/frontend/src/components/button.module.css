@@ -18,7 +18,7 @@ button.base:disabled {
 .toolbar,
 .primary {
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-button, 3px);
   font-family: var(--mono);
 }
 
@@ -52,7 +52,7 @@ button.base:disabled {
   align-items: center;
   gap: 0.4rem;
   padding: 0.45rem 0.65rem;
-  border: 1px solid var(--border);
+  border: var(--stroke-hairline, 1px) solid var(--border);
   background: var(--surface);
   color: var(--muted);
   font-size: var(--font-caption);
@@ -73,7 +73,7 @@ button.base:disabled {
   background: var(--accent);
   color: var(--accent-contrast);
   font-size: var(--font-caption);
-  font-weight: 700;
+  font-weight: var(--font-weight-strong, 700);
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }

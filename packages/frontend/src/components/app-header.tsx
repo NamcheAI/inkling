@@ -78,6 +78,7 @@ export function AppHeader({
                     data-breadcrumb=""
                     title={breadcrumb.truncate === true ? breadcrumb.label : undefined}
                   >
+                    {index === 0 ? <BrandMark /> : null}
                     {breadcrumb.label}
                   </span>
                 ) : (
@@ -89,6 +90,7 @@ export function AppHeader({
                     href={breadcrumb.href}
                     title={breadcrumb.truncate === true ? breadcrumb.label : undefined}
                   >
+                    {index === 0 ? <BrandMark /> : null}
                     {breadcrumb.label}
                   </a>
                 )}
@@ -151,5 +153,15 @@ export function AppHeader({
         )}
       </div>
     </header>
+  );
+}
+
+// Drawn only when the theme supplies a logo; the theme's product line reads "LOGO – Inkling".
+function BrandMark(): React.JSX.Element {
+  return (
+    <>
+      <span className={styles["brandLogo"]} aria-hidden="true" />
+      <span className={styles["brandSeparator"]} aria-hidden="true" />
+    </>
   );
 }

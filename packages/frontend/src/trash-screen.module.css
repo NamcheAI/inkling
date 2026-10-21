@@ -1,7 +1,7 @@
 .heading {
   align-items: flex-end;
   padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--stroke-hairline, 1px) solid var(--border);
 }
 
 .heading p {
@@ -12,7 +12,7 @@
 }
 
 .emptyCatalog {
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--stroke-hairline, 1px) solid var(--border);
 }
 
 .catalog {
@@ -26,7 +26,7 @@
   justify-content: space-between;
   gap: 1.5rem;
   padding: 1rem 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--stroke-hairline, 1px) solid var(--border);
 }
 
 .identity,
@@ -54,7 +54,7 @@
   overflow: hidden;
   margin: 0 0 0.25rem;
   font-size: 1.05rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-strong, 600);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

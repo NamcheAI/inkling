@@ -10,8 +10,8 @@
 
 .toast {
   padding: 0.85rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  border: var(--stroke-hairline, 1px) solid var(--border);
+  border-radius: var(--radius-surface, 3px);
   background: var(--text);
   box-shadow: var(--shadow);
   color: var(--page);
@@ -19,5 +19,5 @@
 }
 
 .error {
-  border-left: 4px solid var(--danger);
+  border-left: var(--stroke-marker, 4px) solid var(--danger);
 }
