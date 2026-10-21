@@ -18,6 +18,19 @@ export default defineConfig({
         target: "http://localhost:8787",
         ws: true,
       },
+      // MCP and its OAuth discovery, registration, consent, and token endpoints.
+      "/.well-known/oauth-": {
+        changeOrigin: false,
+        target: "http://localhost:8787",
+      },
+      "/mcp": {
+        changeOrigin: false,
+        target: "http://localhost:8787",
+      },
+      "/oauth/": {
+        changeOrigin: false,
+        target: "http://localhost:8787",
+      },
       "/theme.css": {
         changeOrigin: false,
         target: "http://localhost:8787",
