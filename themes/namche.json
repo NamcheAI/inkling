@@ -1,0 +1,225 @@
+{
+  "$schema": "../theme.schema.json",
+  "schemaVersion": 1,
+  "name": "namche",
+  "fonts": {
+    "imports": [
+      "https://cdn.namche.ai/fonts/namche-shadow/v0.6.0/sans.css",
+      "https://cdn.namche.ai/fonts/namche-shadow/v0.6.0/mono.css"
+    ],
+    "prose": "\"Namche Shadow Sans\", -apple-system, BlinkMacSystemFont, \"Segoe UI Variable Text\", \"Segoe UI\", Roboto, Cantarell, \"Inter\", \"Helvetica Neue\", Helvetica, Arial, sans-serif",
+    "heading": "\"Namche Shadow Sans\", -apple-system, BlinkMacSystemFont, \"Segoe UI Variable Text\", \"Segoe UI\", Roboto, Cantarell, \"Inter\", \"Helvetica Neue\", Helvetica, Arial, sans-serif",
+    "ui": "\"Namche Shadow Mono\", ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, Consolas, \"Liberation Mono\", monospace",
+    "code": "\"Namche Shadow Mono\", ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, Consolas, \"Liberation Mono\", monospace"
+  },
+  "light": {
+    "page": "oklch(95.17% 0.0096 93.57)",
+    "publicPage": "oklch(95.17% 0.0096 93.57)",
+    "surface": "oklch(100.00% 0.0000 0.00)",
+    "surfaceMuted": "oklch(96.05% 0.0046 258.32)",
+    "editorBackground": "oklch(95.17% 0.0096 93.57)",
+    "editorActiveLine": "oklch(96.05% 0.0046 258.32)",
+    "text": "oklch(17.76% 0.0000 0.00)",
+    "transparent": "oklch(0% 0 0 / 0%)",
+    "muted": "oklch(17.76% 0.0000 0.00)",
+    "border": "oklch(17.76% 0.0000 0.00)",
+    "borderStrong": "oklch(17.76% 0.0000 0.00)",
+    "accent": "oklch(26.86% 0.0000 0.00)",
+    "accentContrast": "oklch(95.17% 0.0096 93.57)",
+    "accentSoft": "oklch(86.97% 0.0380 267.33)",
+    "focusRing": "oklch(30.67% 0.1041 263.40)",
+    "danger": "oklch(49.37% 0.1840 9.56)",
+    "shadow": "oklch(17.76% 0.0000 0.00 / 10%)",
+    "shadowSoft": "oklch(17.76% 0.0000 0.00 / 6%)",
+    "shadowStrong": "oklch(17.76% 0.0000 0.00 / 16%)",
+    "scrim": "oklch(26.86% 0.0000 0.00 / 65%)",
+    "scrimSoft": "oklch(26.86% 0.0000 0.00 / 30%)",
+    "participantText": "oklch(17.76% 0.0000 0.00)",
+    "presence": {
+      "chroma": 0.14,
+      "hueOffset": 30,
+      "lightness": 72
+    },
+    "states": {
+      "draft": {
+        "background": "oklch(0% 0 0 / 0%)",
+        "border": "oklch(17.76% 0.0000 0.00)",
+        "text": "oklch(17.76% 0.0000 0.00)"
+      },
+      "discussion": {
+        "background": "oklch(90.04% 0.0029 264.54)",
+        "border": "oklch(90.04% 0.0029 264.54)",
+        "text": "oklch(17.76% 0.0000 0.00)"
+      },
+      "published": {
+        "background": "oklch(96.05% 0.0046 258.32)",
+        "border": "oklch(17.76% 0.0000 0.00)",
+        "text": "oklch(17.76% 0.0000 0.00)"
+      },
+      "accepted": {
+        "background": "oklch(96.31% 0.0137 174.17)",
+        "border": "oklch(96.31% 0.0137 174.17)",
+        "text": "oklch(42.02% 0.0816 167.47)"
+      },
+      "implemented": {
+        "background": "oklch(26.86% 0.0000 0.00)",
+        "border": "oklch(26.86% 0.0000 0.00)",
+        "text": "oklch(95.17% 0.0096 93.57)"
+      },
+      "abandoned": {
+        "background": "oklch(94.94% 0.0184 9.56)",
+        "border": "oklch(94.94% 0.0184 9.56)",
+        "text": "oklch(49.37% 0.1840 9.56)"
+      }
+    },
+    "visibility": {
+      "public": {
+        "background": "oklch(0% 0 0 / 0%)",
+        "hover": "oklch(96.05% 0.0046 258.32)",
+        "border": "oklch(17.76% 0.0000 0.00)",
+        "text": "oklch(17.76% 0.0000 0.00)"
+      },
+      "private": {
+        "background": "oklch(90.04% 0.0029 264.54)",
+        "hover": "oklch(82.05% 0.0086 271.31)",
+        "border": "oklch(90.04% 0.0029 264.54)",
+        "text": "oklch(17.76% 0.0000 0.00)"
+      },
+      "confidential": {
+        "background": "oklch(94.94% 0.0184 9.56)",
+        "hover": "oklch(89.87% 0.0368 9.56)",
+        "border": "oklch(94.94% 0.0184 9.56)",
+        "text": "oklch(49.37% 0.1840 9.56)"
+      }
+    },
+    "syntax": {
+      "background": "oklch(96.05% 0.0046 258.32)",
+      "text": "oklch(17.76% 0.0000 0.00)",
+      "comment": "oklch(51.30% 0.0125 285.95)",
+      "keyword": "oklch(49.37% 0.1840 9.56)",
+      "title": "oklch(45.45% 0.1566 263.24)",
+      "attribute": "oklch(35.95% 0.1184 263.29)",
+      "string": "oklch(51.70% 0.0991 169.79)",
+      "symbol": "oklch(52.32% 0.1215 58.50)",
+      "addition": "oklch(96.31% 0.0137 174.17)",
+      "deletion": "oklch(94.76% 0.0140 355.01)",
+      "invalid": "oklch(49.37% 0.1840 9.56)"
+    },
+    "mermaid": {
+      "background": "oklch(100.00% 0.0000 0.00)",
+      "primary": "oklch(96.05% 0.0046 258.32)",
+      "primaryText": "oklch(17.76% 0.0000 0.00)",
+      "primaryBorder": "oklch(17.76% 0.0000 0.00)",
+      "line": "oklch(17.76% 0.0000 0.00)",
+      "secondary": "oklch(80.48% 0.0691 235.45)",
+      "tertiary": "oklch(86.97% 0.0380 267.33)",
+      "note": "oklch(90.04% 0.0029 264.54)",
+      "noteText": "oklch(17.76% 0.0000 0.00)"
+    }
+  },
+  "dark": {
+    "page": "oklch(17.76% 0.0000 0.00)",
+    "publicPage": "oklch(17.76% 0.0000 0.00)",
+    "surface": "oklch(30.92% 0.0000 0.00)",
+    "surfaceMuted": "oklch(33.68% 0.0000 0.00)",
+    "editorBackground": "oklch(17.76% 0.0000 0.00)",
+    "editorActiveLine": "oklch(33.68% 0.0000 0.00)",
+    "text": "oklch(95.17% 0.0096 93.57)",
+    "transparent": "oklch(0% 0 0 / 0%)",
+    "muted": "oklch(95.17% 0.0096 93.57)",
+    "border": "oklch(95.17% 0.0096 93.57)",
+    "borderStrong": "oklch(95.17% 0.0096 93.57)",
+    "accent": "oklch(95.17% 0.0096 93.57)",
+    "accentContrast": "oklch(17.76% 0.0000 0.00)",
+    "accentSoft": "oklch(34.18% 0.0363 264.35)",
+    "focusRing": "oklch(69.06% 0.1133 264.35)",
+    "danger": "oklch(70.39% 0.1002 11.95)",
+    "shadow": "oklch(0.00% 0.0000 0.00 / 45%)",
+    "shadowSoft": "oklch(0.00% 0.0000 0.00 / 28%)",
+    "shadowStrong": "oklch(0.00% 0.0000 0.00 / 55%)",
+    "scrim": "oklch(0.00% 0.0000 0.00 / 65%)",
+    "scrimSoft": "oklch(0.00% 0.0000 0.00 / 35%)",
+    "participantText": "oklch(17.76% 0.0000 0.00)",
+    "presence": {
+      "chroma": 0.13,
+      "hueOffset": 30,
+      "lightness": 76
+    },
+    "states": {
+      "draft": {
+        "background": "oklch(0% 0 0 / 0%)",
+        "border": "oklch(95.17% 0.0096 93.57)",
+        "text": "oklch(95.17% 0.0096 93.57)"
+      },
+      "discussion": {
+        "background": "oklch(33.68% 0.0000 0.00)",
+        "border": "oklch(33.68% 0.0000 0.00)",
+        "text": "oklch(95.17% 0.0096 93.57)"
+      },
+      "published": {
+        "background": "oklch(30.92% 0.0000 0.00)",
+        "border": "oklch(95.17% 0.0096 93.57)",
+        "text": "oklch(95.17% 0.0096 93.57)"
+      },
+      "accepted": {
+        "background": "oklch(32.60% 0.0214 167.01)",
+        "border": "oklch(32.60% 0.0214 167.01)",
+        "text": "oklch(69.45% 0.0866 164.65)"
+      },
+      "implemented": {
+        "background": "oklch(95.17% 0.0096 93.57)",
+        "border": "oklch(95.17% 0.0096 93.57)",
+        "text": "oklch(17.76% 0.0000 0.00)"
+      },
+      "abandoned": {
+        "background": "oklch(30.87% 0.0333 10.20)",
+        "border": "oklch(30.87% 0.0333 10.20)",
+        "text": "oklch(70.39% 0.1002 11.95)"
+      }
+    },
+    "visibility": {
+      "public": {
+        "background": "oklch(0% 0 0 / 0%)",
+        "hover": "oklch(33.68% 0.0000 0.00)",
+        "border": "oklch(95.17% 0.0096 93.57)",
+        "text": "oklch(95.17% 0.0096 93.57)"
+      },
+      "private": {
+        "background": "oklch(33.68% 0.0000 0.00)",
+        "hover": "oklch(37.87% 0.0017 106.48)",
+        "border": "oklch(33.68% 0.0000 0.00)",
+        "text": "oklch(95.17% 0.0096 93.57)"
+      },
+      "confidential": {
+        "background": "oklch(30.87% 0.0333 10.20)",
+        "hover": "oklch(38.77% 0.0466 10.95)",
+        "border": "oklch(30.87% 0.0333 10.20)",
+        "text": "oklch(70.39% 0.1002 11.95)"
+      }
+    },
+    "syntax": {
+      "background": "oklch(30.92% 0.0000 0.00)",
+      "text": "oklch(95.17% 0.0096 93.57)",
+      "comment": "oklch(65.43% 0.0198 272.18)",
+      "keyword": "oklch(70.39% 0.1002 11.95)",
+      "title": "oklch(69.06% 0.1133 264.35)",
+      "attribute": "oklch(80.48% 0.0691 235.45)",
+      "string": "oklch(69.45% 0.0866 164.65)",
+      "symbol": "oklch(74.88% 0.1562 62.34)",
+      "addition": "oklch(32.60% 0.0214 167.01)",
+      "deletion": "oklch(30.87% 0.0333 10.20)",
+      "invalid": "oklch(70.39% 0.1002 11.95)"
+    },
+    "mermaid": {
+      "background": "oklch(30.92% 0.0000 0.00)",
+      "primary": "oklch(33.68% 0.0000 0.00)",
+      "primaryText": "oklch(95.17% 0.0096 93.57)",
+      "primaryBorder": "oklch(95.17% 0.0096 93.57)",
+      "line": "oklch(95.17% 0.0096 93.57)",
+      "secondary": "oklch(35.95% 0.1184 263.29)",
+      "tertiary": "oklch(34.18% 0.0363 264.35)",
+      "note": "oklch(32.47% 0.0017 106.50)",
+      "noteText": "oklch(95.17% 0.0096 93.57)"
+    }
+  }
+}
