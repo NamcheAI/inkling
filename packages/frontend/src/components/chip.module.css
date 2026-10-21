@@ -1,4 +1,4 @@
-/* Status chips: lifecycle states and visibility. Elanor has no badge component. */
+/* Status and label chips; lifecycle and visibility chips color themselves from their value. */
 .chip {
   display: inline-flex;
   inline-size: max-content;

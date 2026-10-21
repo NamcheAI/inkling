@@ -1,49 +1,46 @@
+import type { HTMLAttributes, ReactNode } from "react";
+
 import styles from "./chip.module.css";
 
-export interface LifecycleStateChipProps {
-  readonly className?: string | undefined;
+export interface ChipProps extends Omit<HTMLAttributes<HTMLElement>, "className"> {
+  readonly children: ReactNode;
+  /** Makes the chip a link, such as to a search for its value. */
   readonly href?: string | undefined;
-  readonly state: string;
 }
 
-export function LifecycleStateChip({
-  className,
-  href,
-  state,
-}: LifecycleStateChipProps): React.JSX.Element {
-  const properties = {
-    className: [styles["chip"], className].filter(Boolean).join(" "),
-    "data-lifecycle-state": state.trim().toLocaleLowerCase("en"),
-  };
+/** A small status or label chip. Elanor has no badge component. */
+export function Chip({ href, ...props }: ChipProps): React.JSX.Element {
   return href === undefined ? (
-    <span {...properties}>{state}</span>
+    <span {...props} className={styles["chip"]} />
   ) : (
-    <a {...properties} href={href}>
-      {state}
-    </a>
+    <a {...props} className={styles["chip"]} href={href} />
   );
 }
 
-export interface VisibilityChipProps {
-  readonly className?: string | undefined;
+export function LifecycleStateChip({
+  href,
+  state,
+}: {
   readonly href?: string | undefined;
-  readonly visibility: string;
+  readonly state: string;
+}): React.JSX.Element {
+  return (
+    <Chip data-lifecycle-state={state.trim().toLocaleLowerCase("en")} href={href}>
+      {state}
+    </Chip>
+  );
 }
 
 export function VisibilityChip({
-  className,
   href,
   visibility,
-}: VisibilityChipProps): React.JSX.Element {
-  const properties = {
-    className: [styles["chip"], className].filter(Boolean).join(" "),
-    "data-document-visibility": visibility,
-  };
-  return href === undefined ? (
-    <span {...properties}>{visibility}</span>
-  ) : (
-    <a {...properties} href={href}>
+}: {
+  readonly href?: string | undefined;
+  readonly visibility: string;
+}): React.JSX.Element {
+  return (
+    <Chip data-document-visibility={visibility} href={href}>
       {visibility}
-    </a>
+    </Chip>
   );
 }

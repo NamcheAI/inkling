@@ -6,9 +6,8 @@ import type { DocumentMetadataDto } from "@earendil-works/inkling-protocol";
 import type { RenderHeading } from "@earendil-works/inkling-renderer";
 
 import { documentFolio, formatDate } from "../ui.ts";
-import chipStyles from "./chip.module.css";
 import { DocumentTableOfContents } from "./document-table-of-contents.tsx";
-import { LifecycleStateChip, VisibilityChip } from "./chip.tsx";
+import { Chip, LifecycleStateChip, VisibilityChip } from "./chip.tsx";
 import styles from "./reader.module.css";
 
 export interface DocumentPageProps {
@@ -56,13 +55,9 @@ export function DocumentPage({
           {metadata.labels.length === 0 ? null : (
             <div aria-label="Labels" className={styles["labels"]}>
               {metadata.labels.map((label) => (
-                <a
-                  className={chipStyles["chip"]}
-                  href={`/labels?label=${encodeURIComponent(label)}`}
-                  key={label}
-                >
+                <Chip href={`/labels?label=${encodeURIComponent(label)}`} key={label}>
                   {label}
-                </a>
+                </Chip>
               ))}
             </div>
           )}

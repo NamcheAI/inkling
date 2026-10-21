@@ -3,8 +3,7 @@ import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
 import { documentFolio, documentHref, formatDate, publicDocumentHref } from "../ui.ts";
 import styles from "./document-catalog.module.css";
-import chipStyles from "./chip.module.css";
-import { LifecycleStateChip, VisibilityChip } from "./chip.tsx";
+import { Chip, LifecycleStateChip, VisibilityChip } from "./chip.tsx";
 
 export interface DocumentCatalogRowProps {
   readonly document: CatalogResponse["documents"][number];
@@ -43,9 +42,7 @@ export function DocumentCatalogRow({
         <span className={styles["title"]}>
           <strong>{metadata.title}</strong>
           {!publicDocument && hasPendingPublicationChanges(metadata) ? (
-            <span className={chipStyles["chip"]} data-pending-edits="">
-              Pending edits
-            </span>
+            <Chip data-pending-edits="">Pending edits</Chip>
           ) : null}
         </span>
         <small>{excerpt || "No body text yet"}</small>
