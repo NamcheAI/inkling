@@ -13,8 +13,13 @@ const FontFamily = Schema.String.pipe(
 );
 const FontImport = Schema.String.pipe(
   Schema.maxLength(2_000),
-  Schema.pattern(/^https:\/\/[^\s\\"'(){}]+$/u),
+  Schema.pattern(/^https:\/\/[a-z\d.-]+(?::\d+)?(?:\/[^\s\\"'(){}]*)?$/iu),
 );
+
+// Google Fonts stylesheets load their font files from a separate origin.
+const fontFileOrigins: Readonly<Record<string, string>> = {
+  "https://fonts.googleapis.com": "https://fonts.gstatic.com",
+};
 
 const StateColorSchema = Schema.Struct({
   background: OklchColor,
@@ -563,6 +568,21 @@ export function themeStylesheet(theme: ThemeConfiguration): string {
   const light = modeVariables(theme.light);
   const dark = modeVariables(theme.dark);
   return `${imports}${imports === "" ? "" : "\n\n"}:root {\n  color-scheme: light;\n${fonts}\n${light}\n}\n\n:root[data-theme="dark"] {\n  color-scheme: dark;\n${dark}\n}\n\n@media (prefers-color-scheme: dark) {\n  :root:not([data-theme]) {\n    color-scheme: dark;\n${dark}\n  }\n}\n`;
+}
+
+export function themeContentSecurityPolicy(theme: ThemeConfiguration): string {
+  const styleOrigins = [...new Set(theme.fonts.imports.map((url) => new URL(url).origin))];
+  const fontOrigins = [...new Set(styleOrigins.map((origin) => fontFileOrigins[origin] ?? origin))];
+  return [
+    "default-src 'none'",
+    "img-src 'self' https: data:",
+    ["style-src 'self'", ...styleOrigins].join(" "),
+    "script-src 'self'",
+    "connect-src 'self'",
+    ["font-src 'self'", ...fontOrigins].join(" "),
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+  ].join("; ");
 }
 
 export function themeCssResponse(theme: ThemeConfiguration): Response {

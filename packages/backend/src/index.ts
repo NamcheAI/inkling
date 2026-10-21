@@ -38,7 +38,7 @@ import type { InklingApplicationService, RequestCredentials } from "./applicatio
 import { finishGoogleAuthentication, startGoogleAuthentication } from "./google-auth.ts";
 import type { GoogleAuthenticationEnvironment } from "./google-auth.ts";
 import { canonicalRfcPath, rfcRedirectLocation } from "./routes.ts";
-import { defaultTheme, themeCssResponse } from "./theme.ts";
+import { defaultTheme, themeContentSecurityPolicy, themeCssResponse } from "./theme.ts";
 import type { ThemeConfiguration } from "./theme.ts";
 
 export type {
@@ -77,6 +77,7 @@ export {
   paperTheme,
   ThemeConfigurationSchema,
   ThemeError,
+  themeContentSecurityPolicy,
   themeCssResponse,
   themeStylesheet,
 } from "./theme.ts";
@@ -92,6 +93,8 @@ export interface BackendOptions {
 export function createBackendApp(options: BackendOptions = {}): Hono {
   const app = new Hono();
   const version = options.version ?? "development";
+  const theme = options.theme ?? defaultTheme;
+  const contentSecurityPolicy = themeContentSecurityPolicy(theme);
 
   app.use("*", async (context, next) => {
     const startedAt = Date.now();
@@ -140,11 +143,11 @@ export function createBackendApp(options: BackendOptions = {}): Hono {
     return context.body(agentInstructions(new URL(context.req.url).origin));
   });
 
-  app.get("/theme.css", () => themeCssResponse(options.theme ?? defaultTheme));
+  app.get("/theme.css", () => themeCssResponse(theme));
 
   app.get("/theme.json", (context) => {
     context.header("Cache-Control", "public, max-age=300");
-    return context.json(options.theme ?? defaultTheme);
+    return context.json(theme);
   });
 
   app.get("/api/health", (context) => {
@@ -1360,6 +1363,3 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
-
-const contentSecurityPolicy =
-  "default-src 'none'; img-src 'self' https: data:; style-src 'self' https://fonts.googleapis.com; script-src 'self'; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; base-uri 'none'; frame-ancestors 'none'";

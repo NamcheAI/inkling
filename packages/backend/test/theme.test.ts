@@ -11,6 +11,7 @@ import {
   defaultTheme,
   findBundledTheme,
   paperTheme,
+  themeContentSecurityPolicy,
   themeStylesheet,
 } from "../src/index.ts";
 
@@ -71,4 +72,37 @@ test("the backend serves the selected theme as JSON and CSS", async () => {
   assert.match(cssResponse.headers.get("content-type") ?? "", /^text\/css/u);
   assert.match(await cssResponse.text(), /--accent: oklch\(62% 0\.2 25\)/u);
   assert.equal(((await jsonResponse.json()) as { name: string }).name, selected.name);
+});
+
+test("the content security policy allows only the theme's font origins", () => {
+  const selfHosted = {
+    ...defaultTheme,
+    fonts: {
+      ...defaultTheme.fonts,
+      imports: ["https://fonts.example.com/sans.css", "https://fonts.example.com/mono.css"],
+    },
+  };
+
+  assert.equal(
+    themeContentSecurityPolicy(defaultTheme),
+    "default-src 'none'; img-src 'self' https: data:; style-src 'self' https://fonts.googleapis.com; script-src 'self'; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; base-uri 'none'; frame-ancestors 'none'",
+  );
+  assert.match(
+    themeContentSecurityPolicy(selfHosted),
+    /style-src 'self' https:\/\/fonts\.example\.com; .*font-src 'self' https:\/\/fonts\.example\.com;/u,
+  );
+  assert.match(
+    themeContentSecurityPolicy({ ...defaultTheme, fonts: { ...defaultTheme.fonts, imports: [] } }),
+    /style-src 'self'; .*font-src 'self';/u,
+  );
+});
+
+test("theme JSON rejects font imports without a plain host", async () => {
+  const invalid = {
+    ...defaultTheme,
+    fonts: { ...defaultTheme.fonts, imports: ["https://fonts.example;script-src/fonts.css"] },
+  };
+  const result = await Effect.runPromise(Effect.either(decodeThemeJson(JSON.stringify(invalid))));
+
+  assert.equal(Either.isLeft(result), true);
 });
