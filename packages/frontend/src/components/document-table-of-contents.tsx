@@ -96,19 +96,6 @@ function headingTree(headings: readonly RenderHeading[]): readonly HeadingNode[]
   return roots;
 }
 
-/** Whether a media query matches, following changes. */
-export function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => matchMedia(query).matches);
-  useEffect(() => {
-    const media = matchMedia(query);
-    const update = (): void => setMatches(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, [query]);
-  return matches;
-}
-
 function useActiveHeading(
   headings: readonly RenderHeading[],
   tableOfContentsRef: React.RefObject<HTMLElement | null>,

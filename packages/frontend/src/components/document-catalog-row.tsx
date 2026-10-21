@@ -1,7 +1,7 @@
 import { hasPendingPublicationChanges } from "@earendil-works/inkling-core";
 import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
-import { documentHref, formatDate, publicDocumentHref } from "../ui.ts";
+import { documentFolio, documentHref, formatDate, publicDocumentHref } from "../ui.ts";
 import styles from "./document-catalog.module.css";
 import chipStyles from "./chip.module.css";
 import { LifecycleStateChip, VisibilityChip } from "./chip.tsx";
@@ -20,10 +20,6 @@ export function DocumentCatalogRow({
   selected = false,
 }: DocumentCatalogRowProps): React.JSX.Element {
   const { excerpt, metadata } = document;
-  const number =
-    metadata.rfcNumber === undefined
-      ? "NOTE"
-      : `RFC ${String(metadata.rfcNumber).padStart(4, "0")}`;
 
   return (
     <a
@@ -41,7 +37,7 @@ export function DocumentCatalogRow({
       onPointerMove={onSelect}
     >
       <span className={styles["folio"]} data-catalog-folio="">
-        {number}
+        {documentFolio(metadata.rfcNumber)}
       </span>
       <span className={styles["main"]}>
         <span className={styles["title"]}>

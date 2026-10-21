@@ -24,6 +24,7 @@ import { useEffectQuery } from "./effect-hooks.ts";
 import type { FrontmatterVocabulary } from "./frontmatter-completion.ts";
 import { installClientRouter } from "./navigation.ts";
 import type { ClientRouter, NavigateOptions } from "./navigation.ts";
+import { formatRfcNumber } from "./ui.ts";
 
 interface LocationState {
   readonly generation: number;
@@ -193,7 +194,7 @@ function breadcrumbsForRoute(
         label: rfc === undefined ? "Notes" : "RFCs",
       };
   const documentLabel =
-    rfc === undefined ? document.title : `${String(rfc).padStart(4, "0")} - ${document.title}`;
+    rfc === undefined ? document.title : `${formatRfcNumber(rfc)} - ${document.title}`;
   const documentBreadcrumb: BreadcrumbItem = {
     href:
       model.screen === "editor"
@@ -305,43 +306,25 @@ function loadRfcRoute(
   screen: "editor" | "reader",
 ): Effect.Effect<RouteModel, ApiError> {
   return api.authenticationStatus.pipe(
-    Effect.flatMap((authentication): Effect.Effect<RouteModel, ApiError> => {
-      if (!authentication.authenticated) {
-        return api.listPublicDocuments(String(number)).pipe(
-          Effect.flatMap((catalog) => {
-            const document = catalog.documents.find(
-              (candidate) => candidate.metadata.rfcNumber === number,
-            );
-            return document === undefined
-              ? Effect.fail(
-                  new ApiError({
-                    code: "not_found",
-                    message: `RFC ${String(number).padStart(4, "0")} does not exist.`,
-                    retryable: false,
-                    status: 404,
-                  }),
-                )
-              : loadDocumentRoute(api, capabilityToken, document.metadata.id, screen, false);
-          }),
-        );
-      }
-      return api.listDocuments(`rfc:${number}`).pipe(
-        Effect.flatMap((catalog) => {
-          const document = catalog.documents.find(
-            (candidate) => candidate.metadata.rfcNumber === number,
-          );
-          return document === undefined
-            ? Effect.fail(
-                new ApiError({
-                  code: "not_found",
-                  message: `RFC ${String(number).padStart(4, "0")} does not exist.`,
-                  retryable: false,
-                  status: 404,
-                }),
-              )
-            : loadDocumentRoute(api, capabilityToken, document.metadata.id, screen, false);
-        }),
+    Effect.flatMap((authentication) =>
+      authentication.authenticated
+        ? api.listDocuments(`rfc:${number}`)
+        : api.listPublicDocuments(String(number)),
+    ),
+    Effect.flatMap((catalog) => {
+      const document = catalog.documents.find(
+        (candidate) => candidate.metadata.rfcNumber === number,
       );
+      return document === undefined
+        ? Effect.fail(
+            new ApiError({
+              code: "not_found",
+              message: `RFC ${formatRfcNumber(number)} does not exist.`,
+              retryable: false,
+              status: 404,
+            }),
+          )
+        : loadDocumentRoute(api, capabilityToken, document.metadata.id, screen, false);
     }),
   );
 }

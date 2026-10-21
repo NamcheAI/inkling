@@ -16,19 +16,43 @@ export function documentHref(
     ? `/share/${encodeURIComponent(documentId)}`
     : rfcNumber === undefined
       ? `/documents/${encodeURIComponent(documentId)}`
-      : `/rfc/${String(rfcNumber).padStart(4, "0")}`;
+      : `/rfc/${formatRfcNumber(rfcNumber)}`;
   return `${base}${mode === "edit" ? "/edit" : ""}${search}`;
 }
 
 export function publicDocumentHref(documentId: string, rfcNumber: number | undefined): string {
   return rfcNumber === undefined
     ? `/public/documents/${encodeURIComponent(documentId)}`
-    : `/rfc/${String(rfcNumber).padStart(4, "0")}`;
+    : `/rfc/${formatRfcNumber(rfcNumber)}`;
+}
+
+/** An RFC number as Inkling shows and routes it, zero-padded to four digits. */
+export function formatRfcNumber(rfcNumber: number): string {
+  return String(rfcNumber).padStart(4, "0");
+}
+
+/** Names a document's kind: its RFC number, or "Note". */
+export function documentFolio(rfcNumber: number | undefined): string {
+  return rfcNumber === undefined ? "Note" : `RFC ${formatRfcNumber(rfcNumber)}`;
 }
 
 export function formatDate(value: string): string {
   return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(
     new Date(value),
+  );
+}
+
+/** Formats a timestamp's date in the reader's time zone. */
+export function formatLocalDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
+}
+
+/** Whether keyboard input at `target` edits text, so single-key shortcuts must not fire. */
+export function isEditableElement(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
   );
 }
 

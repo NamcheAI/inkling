@@ -5,8 +5,9 @@ import { Button, IconButton, InlineCode, KeyboardKey, Search } from "@earendil-w
 import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService } from "../api.ts";
-import styles from "./document-search.module.css";
 import { useEffectQuery } from "../effect-hooks.ts";
+import { formatRfcNumber, isEditableElement } from "../ui.ts";
+import styles from "./document-search.module.css";
 
 interface SearchCompletion {
   readonly complete: boolean;
@@ -265,7 +266,7 @@ function searchCompletions(query: string, catalog: CatalogResponse): readonly Se
         return documents.flatMap((document) =>
           document.metadata.rfcNumber === undefined
             ? []
-            : [String(document.metadata.rfcNumber).padStart(4, "0")],
+            : [formatRfcNumber(document.metadata.rfcNumber)],
         );
       case "is":
         return ["rfc", "note", "published", "unpublished", "public", "private", "confidential"];
@@ -307,12 +308,4 @@ function trailingSearchFragment(query: string): string {
 
 function quoteSearchValue(value: string): string {
   return /\s/u.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
-}
-
-function isEditableElement(element: Element | null): boolean {
-  return (
-    element instanceof HTMLInputElement ||
-    element instanceof HTMLTextAreaElement ||
-    (element instanceof HTMLElement && element.isContentEditable)
-  );
 }

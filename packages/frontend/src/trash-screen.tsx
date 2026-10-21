@@ -19,7 +19,7 @@ import type { CatalogResponse, DocumentSummary } from "@earendil-works/inkling-p
 
 import type { ApiClientService, ApiError } from "./api.ts";
 import { useAppContext } from "./app-context.tsx";
-import { documentHref } from "./ui.ts";
+import { documentFolio, documentHref, formatLocalDate } from "./ui.ts";
 import { ButtonLink } from "./components/button-link.tsx";
 import { ConfirmationDialog } from "./components/confirmation-dialog.tsx";
 import { useEffectAction } from "./effect-hooks.ts";
@@ -108,11 +108,7 @@ export function TrashScreen({ api, initialCatalog }: TrashScreenProps): React.JS
                       key={metadata.id}
                     >
                       <div className={styles["identity"]}>
-                        <span className={styles["folio"]}>
-                          {metadata.rfcNumber === undefined
-                            ? "Note"
-                            : `RFC ${String(metadata.rfcNumber).padStart(4, "0")}`}
-                        </span>
+                        <span className={styles["folio"]}>{documentFolio(metadata.rfcNumber)}</span>
                         <div className={styles["summary"]}>
                           <h2>
                             <a href={documentHref(metadata.id, metadata.rfcNumber, false, "edit")}>
@@ -122,10 +118,10 @@ export function TrashScreen({ api, initialCatalog }: TrashScreenProps): React.JS
                           <p>
                             {metadata.deletedAt === undefined
                               ? "Deletion date unavailable"
-                              : `Deleted ${formatDate(metadata.deletedAt)}`}
+                              : `Deleted ${formatLocalDate(metadata.deletedAt)}`}
                             {expiresAt === undefined
                               ? ""
-                              : ` · Permanently deletes ${formatDate(expiresAt)}`}
+                              : ` · Permanently deletes ${formatLocalDate(expiresAt)}`}
                           </p>
                         </div>
                       </div>
@@ -218,8 +214,4 @@ export function TrashScreen({ api, initialCatalog }: TrashScreenProps): React.JS
       />
     </>
   );
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
 }

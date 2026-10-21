@@ -18,6 +18,7 @@ import type { ApiKeyCreated, ApiKeyDto } from "@earendil-works/inkling-protocol"
 
 import type { ApiClientService, ApiError } from "../api.ts";
 import { useEffectAction, useEffectQuery } from "../effect-hooks.ts";
+import { formatLocalDate } from "../ui.ts";
 import { ConfirmationDialog } from "./confirmation-dialog.tsx";
 import { Dialog } from "./dialog.tsx";
 import { FormError } from "./form-error.tsx";
@@ -318,10 +319,6 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
 
 function keyActivity(key: ApiKeyDto): string {
   return key.lastUsedAt === undefined
-    ? `Created ${formatDate(key.createdAt)} · Never used`
-    : `Last used ${formatDate(key.lastUsedAt)}`;
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
+    ? `Created ${formatLocalDate(key.createdAt)} · Never used`
+    : `Last used ${formatLocalDate(key.lastUsedAt)}`;
 }

@@ -4,6 +4,7 @@ import { DescriptionIcon } from "@earendil-works/elanor-icons-react";
 import { EmptyState } from "@earendil-works/elanor-react";
 import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
+import { isEditableElement } from "../ui.ts";
 import styles from "./document-catalog.module.css";
 import { DocumentCatalogRow } from "./document-catalog-row.tsx";
 
@@ -119,13 +120,5 @@ export function DocumentCatalog({
         />
       ))}
     </section>
-  );
-}
-
-function isEditableElement(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
   );
 }

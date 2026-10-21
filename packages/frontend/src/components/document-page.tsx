@@ -1,12 +1,13 @@
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import { Heading, KeyValue } from "@earendil-works/elanor-react";
 import type { DocumentMetadataDto } from "@earendil-works/inkling-protocol";
 import type { RenderHeading } from "@earendil-works/inkling-renderer";
 
-import { formatDate } from "../ui.ts";
+import { documentFolio, formatDate } from "../ui.ts";
 import chipStyles from "./chip.module.css";
-import { DocumentTableOfContents, useMediaQuery } from "./document-table-of-contents.tsx";
+import { DocumentTableOfContents } from "./document-table-of-contents.tsx";
 import { LifecycleStateChip, VisibilityChip } from "./chip.tsx";
 import styles from "./reader.module.css";
 
@@ -24,10 +25,6 @@ export function DocumentPage({
   presentation = "reader",
 }: DocumentPageProps): React.JSX.Element {
   const wide = useMediaQuery("(width > 68rem)");
-  const folio =
-    metadata.rfcNumber === undefined
-      ? "Note"
-      : `RFC ${String(metadata.rfcNumber).padStart(4, "0")}`;
   const tableOfContents = (
     <DocumentTableOfContents
       headings={headings}
@@ -41,7 +38,7 @@ export function DocumentPage({
       data-document-page=""
     >
       <header className={styles["heading"]}>
-        <p className={styles["folio"]}>{folio}</p>
+        <p className={styles["folio"]}>{documentFolio(metadata.rfcNumber)}</p>
         <div className={styles["headingMain"]}>
           <div className={styles["badges"]}>
             <LifecycleStateChip
@@ -151,4 +148,17 @@ function PeopleList({
       ))}
     </>
   );
+}
+
+/** Whether a media query matches, following changes. */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => matchMedia(query).matches);
+  useEffect(() => {
+    const media = matchMedia(query);
+    const update = (): void => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+  return matches;
 }
