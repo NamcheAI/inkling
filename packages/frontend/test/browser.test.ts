@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
@@ -120,6 +120,76 @@ test(
       assert.equal(await first.locator("[data-api-key-secret]").count(), 0);
       await first.locator("[data-show-api-key]").click();
       assert.equal((await first.locator("[data-api-key-secret]").textContent()) ?? "", revealedKey);
+      await first.getByLabel("Close API keys").click();
+
+      // MCP OAuth in a real browser: the person arrives from another site, so
+      // the Strict session cookie is withheld until Inkling's own bounce, and
+      // the approval POST carries a browser-generated Origin header.
+      const clientRedirect = "http://127.0.0.1:9/callback";
+      const registration = await fetch(`${baseUrl}/oauth/register`, {
+        body: JSON.stringify({
+          client_name: "Browser MCP client",
+          redirect_uris: [clientRedirect],
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      assert.equal(registration.status, 201);
+      const { client_id: clientId } = (await registration.json()) as { client_id: string };
+      const codeVerifier = "browser-oauth-verifier-0123456789-abcdefghijklmnop";
+      const authorizeUrl = `${baseUrl}/oauth/authorize?${new URLSearchParams({
+        client_id: clientId,
+        code_challenge: createHash("sha256").update(codeVerifier).digest("base64url"),
+        code_challenge_method: "S256",
+        redirect_uri: clientRedirect,
+        response_type: "code",
+        state: "browser-state",
+      })}`;
+      const consent = await context.newPage();
+      const signInRequests: string[] = [];
+      consent.on("request", (request) => {
+        if (request.url().includes("/api/auth/google/start")) signInRequests.push(request.url());
+      });
+      let clientCallback: URL | undefined;
+      await consent.route("http://127.0.0.1:9/**", (route) => {
+        clientCallback = new URL(route.request().url());
+        return route.fulfill({ body: "connected", contentType: "text/plain" });
+      });
+      await consent.route("https://client.example/**", (route) =>
+        route.fulfill({ body: "<!doctype html><title>Client</title>", contentType: "text/html" }),
+      );
+      await consent.goto("https://client.example/connect");
+      await consent.evaluate((href) => {
+        location.href = href;
+      }, authorizeUrl);
+      await consent.getByRole("button", { name: "Allow access" }).waitFor();
+      assert.match(
+        (await consent.locator("h1").textContent()) ?? "",
+        /Connect Browser MCP client to Inkling\?/u,
+      );
+      await consent.getByRole("button", { name: "Allow access" }).click();
+      await consent.waitForURL(/^http:\/\/127\.0\.0\.1:9\/callback/u);
+      assert.deepEqual(signInRequests, []);
+      assert.ok(clientCallback);
+      assert.equal(clientCallback.searchParams.get("state"), "browser-state");
+      const issuedToken = await fetch(`${baseUrl}/oauth/token`, {
+        body: new URLSearchParams({
+          client_id: clientId,
+          code: clientCallback.searchParams.get("code") ?? "",
+          code_verifier: codeVerifier,
+          grant_type: "authorization_code",
+          redirect_uri: clientRedirect,
+        }),
+        method: "POST",
+      });
+      assert.equal(issuedToken.status, 200);
+      await consent.close();
+      await first.locator("[data-account-trigger]").click();
+      await first.locator("[data-open-api-keys]").click();
+      assert.match(
+        (await first.locator("[data-oauth-key]").textContent()) ?? "",
+        /Connected by signing in from Browser MCP client/u,
+      );
       await first.getByLabel("Close API keys").click();
 
       const initialTheme = await first.locator("html").getAttribute("data-theme");

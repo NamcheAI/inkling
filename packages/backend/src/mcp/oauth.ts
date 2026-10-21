@@ -593,7 +593,7 @@ function page(
 ): Response {
   const formAction = ["'self'", formTarget].filter((value) => value !== "").join(" ");
   return new Response(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">${head}<title>${escapeHtml(title)}</title><link rel="stylesheet" href="/theme.css"><link rel="stylesheet" href="/public.css"></head><body><header class="public-masthead"><a href="/">INKLING</a><span>AUTHORIZE</span></header><main class="oauth-shell"><article class="oauth-paper">${body}</article></main></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin">${head}<title>${escapeHtml(title)}</title><link rel="stylesheet" href="/theme.css"><link rel="stylesheet" href="/public.css"></head><body><header class="public-masthead"><a href="/">INKLING</a><span>AUTHORIZE</span></header><main class="oauth-shell"><article class="oauth-paper">${body}</article></main></body></html>`,
     {
       headers: {
         "Cache-Control": "no-store",
@@ -601,7 +601,10 @@ function page(
         // so the client's redirect target must be allowed explicitly.
         "Content-Security-Policy": `default-src 'none'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; form-action ${formAction}; base-uri 'none'; frame-ancestors 'none'`,
         "Content-Type": "text/html; charset=UTF-8",
-        "Referrer-Policy": "no-referrer",
+        // Not no-referrer: under that policy browsers send `Origin: null` on
+        // the same-origin approval POST, which then fails the origin check.
+        // same-origin still sends nothing to other sites.
+        "Referrer-Policy": "same-origin",
       },
       status,
     },

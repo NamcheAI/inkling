@@ -265,6 +265,8 @@ test("the consent page shows the destination and requires a same-origin CSRF-pro
   const csp = consent.headers.get("content-security-policy") ?? "";
   assert.match(csp, /form-action 'self' http:\/\/127\.0\.0\.1:7777/u);
   assert.match(csp, /frame-ancestors 'none'/u);
+  // no-referrer would make browsers send `Origin: null` on the approval POST.
+  assert.equal(consent.headers.get("referrer-policy"), "same-origin");
   const html = await consent.text();
   assert.match(html, /Connect Test agent to Inkling\?/u);
   assert.match(html, /Ada &lt;Lovelace&gt;/u);
