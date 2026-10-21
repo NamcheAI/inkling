@@ -24,8 +24,9 @@ import type {
 
 import type { ApiClientService, ApiError } from "../api.ts";
 import { useAppContext } from "../app-context.tsx";
+import { copyText } from "../clipboard.ts";
+import type { ClipboardError } from "../clipboard.ts";
 import { useEffectAction, useEffectQuery } from "../effect-hooks.ts";
-import { browserRuntime } from "../effect-runtime.ts";
 import { formatDate } from "../ui.ts";
 import { Dialog } from "./dialog.tsx";
 import { FormError } from "./form-error.tsx";
@@ -93,6 +94,12 @@ export function SharingControl({
     (link) => link.access === selectedAccess && link.passwordProtected === passwordProtected,
   );
   const pending = shareAction.state.pending;
+  const copy = useEffectAction<string, void, ClipboardError>(copyText);
+  const copyLink = (url: string, copiedMessage: string): void =>
+    copy.execute(url, {
+      onFailure: (error) => showToast(error.message, "error"),
+      onSuccess: () => showToast(copiedMessage, "success"),
+    });
   const applyResponse = (response: ShareLinksResponse): void => {
     onUpdated(response);
     linksQuery.refresh();
@@ -135,10 +142,7 @@ export function SharingControl({
                     disabled={pending}
                     key={link.id}
                     link={link}
-                    onCopy={(url) => {
-                      copyShareUrl(url);
-                      showToast("Share link copied.", "success");
-                    }}
+                    onCopy={(url) => copyLink(url, "Share link copied.")}
                     onDelete={(id) =>
                       shareAction.execute(
                         { id, type: "delete" },
@@ -178,9 +182,9 @@ export function SharingControl({
                   onSuccess: (response) => {
                     applyResponse(response);
                     const created = response.links.find((link) => !previousIds.has(link.id));
-                    if (created?.url !== undefined) copyShareUrl(created.url);
                     setPassword("");
-                    showToast("Share link created and copied.", "success");
+                    if (created?.url === undefined) showToast("Share link created.", "success");
+                    else copyLink(created.url, "Share link created and copied.");
                   },
                 },
               );
@@ -316,15 +320,6 @@ function ShareLinkRow({
         </Button>
       </Stack>
     </li>
-  );
-}
-
-function copyShareUrl(url: string): void {
-  browserRuntime.runFork(
-    Effect.tryPromise({
-      catch: () => undefined,
-      try: () => navigator.clipboard.writeText(url),
-    }).pipe(Effect.ignore),
   );
 }
 

@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Effect } from "effect";
 
 import {
   Button,
@@ -17,6 +16,8 @@ import {
 import type { ApiKeyCreated, ApiKeyDto } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService, ApiError } from "../api.ts";
+import { copyText } from "../clipboard.ts";
+import type { ClipboardError } from "../clipboard.ts";
 import { useEffectAction, useEffectQuery } from "../effect-hooks.ts";
 import { formatLocalDate } from "../ui.ts";
 import { ConfirmationDialog } from "./confirmation-dialog.tsx";
@@ -46,12 +47,7 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
     api.revealApiKey(keyId),
   );
   const revokeKey = useEffectAction<string, void, ApiError>((keyId) => api.revokeApiKey(keyId));
-  const copyKey = useEffectAction<string, void, never>((key) =>
-    Effect.tryPromise({
-      catch: () => undefined,
-      try: () => navigator.clipboard.writeText(key),
-    }).pipe(Effect.ignore),
-  );
+  const copyKey = useEffectAction<string, void, ClipboardError>(copyText);
 
   useEffect(() => {
     const loaded = keyQuery.state.data;
@@ -103,6 +99,7 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
     createKey.state.error?.message,
     revealKey.state.error?.message,
     revokeKey.state.error?.message,
+    copyKey.state.error?.message,
   ]
     .filter(Boolean)
     .join(" ");
