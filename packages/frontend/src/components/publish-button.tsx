@@ -13,8 +13,8 @@ import { useEffectAction } from "../effect-hooks.ts";
 export interface PublishButtonProps {
   readonly api: ApiClientService;
   readonly beforePublish: () => Effect.Effect<void, CollaborationClientError>;
-  readonly disabled?: boolean | undefined;
-  readonly disabledLabel?: string | undefined;
+  /** Why publishing is unavailable right now, shown in place of the label; enabled when absent. */
+  readonly blockedLabel?: string | undefined;
   readonly metadata: DocumentMetadataDto;
   readonly onPublished: (metadata: DocumentMetadataDto) => void;
   readonly published: boolean;
@@ -23,8 +23,7 @@ export interface PublishButtonProps {
 export function PublishButton({
   api,
   beforePublish,
-  disabled = false,
-  disabledLabel,
+  blockedLabel,
   metadata,
   onPublished,
   published,
@@ -40,7 +39,7 @@ export function PublishButton({
   return (
     <Button
       data-publish=""
-      disabled={disabled}
+      disabled={blockedLabel !== undefined}
       iconStart={<PublishIcon />}
       pending={publish.state.pending}
       onClick={() =>
@@ -53,7 +52,7 @@ export function PublishButton({
         })
       }
     >
-      {publish.state.pending ? "Saving & publishing…" : (disabledLabel ?? label)}
+      {publish.state.pending ? "Saving & publishing…" : (blockedLabel ?? label)}
     </Button>
   );
 }

@@ -21,8 +21,6 @@ import { SharingControl } from "./sharing-control.tsx";
 
 export interface EditorToolbarProps {
   readonly api: ApiClientService;
-  readonly beforeHistory: HistoryControlProps["beforeOpen"];
-  readonly beforePublish: PublishButtonProps["beforePublish"];
   readonly canDelete: boolean;
   readonly canEdit: boolean;
   readonly canEditMetadata: boolean;
@@ -38,16 +36,15 @@ export interface EditorToolbarProps {
   readonly onTogglePreview: () => void;
   readonly openCommentCount: number;
   readonly previewOpen: boolean;
-  readonly publishDisabled: boolean;
-  readonly publishDisabledLabel?: string | undefined;
+  readonly publishBlockedLabel?: string | undefined;
   readonly publicationMetadata: DocumentMetadataDto;
+  /** Saves pending edits before history opens or a revision is published. */
+  readonly saveChanges: HistoryControlProps["beforeOpen"] & PublishButtonProps["beforePublish"];
   readonly shared: boolean;
 }
 
 export function EditorToolbar({
   api,
-  beforeHistory,
-  beforePublish,
   canDelete,
   canEdit,
   canEditMetadata,
@@ -63,9 +60,9 @@ export function EditorToolbar({
   onTogglePreview,
   openCommentCount,
   previewOpen,
-  publishDisabled,
-  publishDisabledLabel,
+  publishBlockedLabel,
   publicationMetadata,
+  saveChanges,
   shared,
 }: EditorToolbarProps): React.JSX.Element {
   const trashed = metadata.deletedAt !== undefined;
@@ -111,7 +108,7 @@ export function EditorToolbar({
         {shared || trashed ? null : (
           <HistoryControl
             api={api}
-            beforeOpen={beforeHistory}
+            beforeOpen={saveChanges}
             canRestore={canEdit}
             currentRevision={metadata.headRevision}
             documentId={metadata.id}
@@ -143,9 +140,8 @@ export function EditorToolbar({
         {shared || trashed ? null : (
           <PublishButton
             api={api}
-            beforePublish={beforePublish}
-            disabled={publishDisabled}
-            disabledLabel={publishDisabledLabel}
+            beforePublish={saveChanges}
+            blockedLabel={publishBlockedLabel}
             metadata={publicationMetadata}
             onPublished={onMetadataChanged}
             published={metadata.publishedRevision !== undefined}

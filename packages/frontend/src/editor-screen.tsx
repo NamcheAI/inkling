@@ -98,7 +98,7 @@ export function EditorScreen({
   const canEditMetadata = permissions?.includes("edit-metadata") ?? !shared;
   const rendered = useRenderedMarkdown(body, true);
   const historyRendered = useRenderedMarkdown(historyPreview?.document.body ?? "", true);
-  const publishDisabledLabel =
+  const publishBlockedLabel =
     connectionState === "connecting"
       ? "Connecting…"
       : connectionState === "disconnected"
@@ -108,7 +108,7 @@ export function EditorScreen({
           : rendered.error === undefined
             ? undefined
             : "Fix frontmatter";
-  const saveBeforePublish = (): Effect.Effect<void, CollaborationClientError> =>
+  const saveChanges = (): Effect.Effect<void, CollaborationClientError> =>
     sessionRef.current?.client?.flush ??
     Effect.fail(
       new CollaborationClientError({
@@ -161,8 +161,6 @@ export function EditorScreen({
     >
       <EditorToolbar
         api={api}
-        beforeHistory={saveBeforePublish}
-        beforePublish={saveBeforePublish}
         canDelete={canDelete}
         canEdit={canEdit}
         canEditMetadata={canEditMetadata}
@@ -203,9 +201,9 @@ export function EditorScreen({
         onTogglePreview={() => setPreviewOpen((open) => !open)}
         openCommentCount={openCount}
         previewOpen={previewOpen}
-        publishDisabled={publishDisabledLabel !== undefined}
-        publishDisabledLabel={publishDisabledLabel}
+        publishBlockedLabel={publishBlockedLabel}
         publicationMetadata={previewMetadata}
+        saveChanges={saveChanges}
         shared={shared}
       />
       <EditorWorkbench
