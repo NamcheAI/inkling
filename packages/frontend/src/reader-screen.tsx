@@ -5,8 +5,8 @@ import type { DocumentResponse } from "@earendil-works/inkling-protocol";
 
 import { useAppContext } from "./app-context.tsx";
 import { ReaderDocument } from "./components/reader-document.tsx";
-import styles from "./components/reader.module.css";
 import { ReaderToolbar } from "./components/reader-toolbar.tsx";
+import styles from "./workspace.module.css";
 
 export interface ReaderScreenProps {
   readonly document: DocumentResponse;

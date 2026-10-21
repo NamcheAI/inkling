@@ -1,18 +1,12 @@
 import { useMemo } from "react";
 
 import { ArrowBackIcon, LabelIcon } from "@earendil-works/elanor-icons-react";
-import {
-  Container,
-  EmptyState,
-  Layout,
-  Page,
-  PageHeader,
-  Text,
-} from "@earendil-works/elanor-react";
+import { Container, Layout, Page, PageHeader, Text } from "@earendil-works/elanor-react";
 import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
 import { ButtonLink } from "./components/button-link.tsx";
 import { DocumentCatalog } from "./components/document-catalog.tsx";
+import { EmptyMessage } from "./components/empty-message.tsx";
 import styles from "./labels-screen.module.css";
 import workspaceStyles from "./workspace.module.css";
 
@@ -84,19 +78,13 @@ export function LabelsScreen({
 function LabelIndex({ groups }: { readonly groups: readonly LabelGroup[] }): React.JSX.Element {
   if (groups.length === 0) {
     return (
-      <EmptyState.Root data-empty-state="" data-label-index="">
-        <EmptyState.Illustration>
-          <LabelIcon aria-hidden="true" className={styles["illustration"]} />
-        </EmptyState.Illustration>
-        <EmptyState.Body>
-          <EmptyState.Copy>
-            <EmptyState.Title level={2}>No labels yet.</EmptyState.Title>
-            <EmptyState.Description>
-              Add labels in a note or RFC’s Markdown frontmatter.
-            </EmptyState.Description>
-          </EmptyState.Copy>
-        </EmptyState.Body>
-      </EmptyState.Root>
+      <EmptyMessage
+        data-label-index=""
+        description="Add labels in a note or RFC’s Markdown frontmatter."
+        icon={LabelIcon}
+        level={2}
+        title="No labels yet."
+      />
     );
   }
 

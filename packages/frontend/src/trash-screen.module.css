@@ -1,13 +1,3 @@
-.empty {
-  padding-block: var(--semantic-dimension-space-padding-xxxx-large);
-}
-
-.illustration {
-  inline-size: var(--semantic-dimension-size-x-large);
-  block-size: var(--semantic-dimension-size-x-large);
-  color: var(--semantic-color-icon-secondary);
-}
-
 .catalog {
   display: grid;
   border-block-start: var(--semantic-dimension-border-width-small) solid

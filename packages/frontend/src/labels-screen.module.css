@@ -48,12 +48,6 @@
   font: var(--semantic-typography-ui-tertiary);
 }
 
-.illustration {
-  inline-size: var(--semantic-dimension-size-x-large);
-  block-size: var(--semantic-dimension-size-x-large);
-  color: var(--semantic-color-icon-secondary);
-}
-
 .results {
   display: grid;
   gap: var(--semantic-dimension-space-gap-small);

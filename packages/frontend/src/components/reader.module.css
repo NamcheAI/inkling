@@ -1,8 +1,3 @@
-.layout {
-  padding-block: var(--semantic-dimension-space-padding-xxx-large)
-    var(--semantic-dimension-space-padding-xxxx-large);
-}
-
 .toolbar {
   display: flex;
   justify-content: flex-end;
@@ -12,22 +7,6 @@
 
 .document {
   min-inline-size: 0;
-}
-
-.unavailable {
-  padding-block: var(--semantic-dimension-space-padding-xxxx-large);
-}
-
-.illustration {
-  inline-size: var(--semantic-dimension-size-x-large);
-  block-size: var(--semantic-dimension-size-x-large);
-  color: var(--semantic-color-icon-secondary);
-}
-
-.trashedEyebrow {
-  margin: 0;
-  color: var(--semantic-color-text-negative);
-  font: var(--semantic-typography-ui-label);
 }
 
 .page {

@@ -1,10 +1,10 @@
 import { DeleteIcon, DescriptionIcon } from "@earendil-works/elanor-icons-react";
-import { EmptyState } from "@earendil-works/elanor-react";
 import type { DocumentResponse } from "@earendil-works/inkling-protocol";
 
 import { useRenderedMarkdown } from "../markdown.tsx";
 import { metadataWithFrontmatter } from "./document-metadata.ts";
 import { DocumentPage } from "./document-page.tsx";
+import { EmptyMessage } from "./empty-message.tsx";
 import { MarkdownArticle } from "./markdown-article.tsx";
 import styles from "./reader.module.css";
 
@@ -16,47 +16,27 @@ export function ReaderDocument({ document }: ReaderDocumentProps): React.JSX.Ele
   const rendered = useRenderedMarkdown(document.body, true);
   if (document.metadata.deletedAt !== undefined) {
     return (
-      <EmptyState.Root
-        className={styles["unavailable"]}
-        data-empty-state=""
+      <EmptyMessage
         data-reader=""
         data-trashed=""
-      >
-        <EmptyState.Illustration>
-          <DeleteIcon aria-hidden="true" className={styles["illustration"]} />
-        </EmptyState.Illustration>
-        <EmptyState.Body>
-          <EmptyState.Copy>
-            <p className={styles["trashedEyebrow"]}>In Trash</p>
-            <EmptyState.Title level={1}>{document.metadata.title}</EmptyState.Title>
-            <EmptyState.Description>
-              Open the editor to inspect or change this document before it is permanently deleted.
-            </EmptyState.Description>
-          </EmptyState.Copy>
-        </EmptyState.Body>
-      </EmptyState.Root>
+        description="Open the editor to inspect or change this document before it is permanently deleted."
+        icon={DeleteIcon}
+        level={1}
+        title={document.metadata.title}
+        warning="In Trash"
+      />
     );
   }
   if (document.metadata.publishedRevision === undefined) {
     return (
-      <EmptyState.Root
-        className={styles["unavailable"]}
-        data-empty-state=""
+      <EmptyMessage
         data-reader=""
         data-unpublished=""
-      >
-        <EmptyState.Illustration>
-          <DescriptionIcon aria-hidden="true" className={styles["illustration"]} />
-        </EmptyState.Illustration>
-        <EmptyState.Body>
-          <EmptyState.Copy>
-            <EmptyState.Title level={1}>{document.metadata.title}</EmptyState.Title>
-            <EmptyState.Description>
-              This document has not been published yet.
-            </EmptyState.Description>
-          </EmptyState.Copy>
-        </EmptyState.Body>
-      </EmptyState.Root>
+        description="This document has not been published yet."
+        icon={DescriptionIcon}
+        level={1}
+        title={document.metadata.title}
+      />
     );
   }
   const metadata = metadataWithFrontmatter(document.metadata, rendered.frontmatter, rendered.title);

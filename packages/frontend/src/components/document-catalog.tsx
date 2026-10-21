@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { DescriptionIcon } from "@earendil-works/elanor-icons-react";
-import { EmptyState } from "@earendil-works/elanor-react";
 import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
 import { isEditableElement } from "../ui.ts";
 import styles from "./document-catalog.module.css";
 import { DocumentCatalogRow } from "./document-catalog-row.tsx";
+import { EmptyMessage } from "./empty-message.tsx";
 
 export interface DocumentCatalogProps {
   readonly catalog: CatalogResponse;
@@ -88,22 +88,17 @@ export function DocumentCatalog({
 
   if (catalog.documents.length === 0) {
     return (
-      <section aria-live="polite" className={styles["empty"]} data-catalog="">
-        <EmptyState.Root data-empty-state="">
-          <EmptyState.Illustration>
-            <DescriptionIcon aria-hidden="true" className={styles["illustration"]} />
-          </EmptyState.Illustration>
-          <EmptyState.Body>
-            <EmptyState.Copy>
-              <EmptyState.Title level={2}>No notes or RFCs found.</EmptyState.Title>
-              <EmptyState.Description>
-                {publicCatalog
-                  ? "No public revisions have been published yet."
-                  : "Create one or adjust the search."}
-              </EmptyState.Description>
-            </EmptyState.Copy>
-          </EmptyState.Body>
-        </EmptyState.Root>
+      <section aria-live="polite" data-catalog="">
+        <EmptyMessage
+          description={
+            publicCatalog
+              ? "No public revisions have been published yet."
+              : "Create one or adjust the search."
+          }
+          icon={DescriptionIcon}
+          level={2}
+          title="No notes or RFCs found."
+        />
       </section>
     );
   }

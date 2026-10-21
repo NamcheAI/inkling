@@ -1,4 +1,4 @@
-/* Shared by the workspace, labels, and trash screens. */
+/* Shared by the workspace, labels, trash, and reader screens. */
 .layout {
   padding-block: var(--semantic-dimension-space-padding-xxx-large)
     var(--semantic-dimension-space-padding-xxxx-large);

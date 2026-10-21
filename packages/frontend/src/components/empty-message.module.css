@@ -1,0 +1,15 @@
+.root {
+  padding-block: var(--semantic-dimension-space-padding-xxxx-large);
+}
+
+.illustration {
+  inline-size: var(--semantic-dimension-size-x-large);
+  block-size: var(--semantic-dimension-size-x-large);
+  color: var(--semantic-color-icon-secondary);
+}
+
+.warning {
+  margin: 0;
+  color: var(--semantic-color-text-negative);
+  font: var(--semantic-typography-ui-label);
+}

@@ -6,14 +6,7 @@ import {
   EditIcon,
   RestoreFromTrashIcon,
 } from "@earendil-works/elanor-icons-react";
-import {
-  Button,
-  Container,
-  EmptyState,
-  Layout,
-  Page,
-  PageHeader,
-} from "@earendil-works/elanor-react";
+import { Button, Container, Layout, Page, PageHeader } from "@earendil-works/elanor-react";
 import { documentTrashExpiresAt } from "@earendil-works/inkling-core";
 import type { CatalogResponse, DocumentSummary } from "@earendil-works/inkling-protocol";
 
@@ -22,6 +15,7 @@ import { useAppContext } from "./app-context.tsx";
 import { documentFolio, documentHref, formatLocalDate } from "./ui.ts";
 import { ButtonLink } from "./components/button-link.tsx";
 import { ConfirmationDialog } from "./components/confirmation-dialog.tsx";
+import { EmptyMessage } from "./components/empty-message.tsx";
 import { useEffectAction } from "./effect-hooks.ts";
 import styles from "./trash-screen.module.css";
 import workspaceStyles from "./workspace.module.css";
@@ -80,20 +74,13 @@ export function TrashScreen({ api, initialCatalog }: TrashScreenProps): React.JS
               </PageHeader.Description>
             </PageHeader.Root>
             {catalog.documents.length === 0 ? (
-              <section className={styles["empty"]} data-trash-catalog="">
-                <EmptyState.Root data-empty-state="">
-                  <EmptyState.Illustration>
-                    <DeleteIcon aria-hidden="true" className={styles["illustration"]} />
-                  </EmptyState.Illustration>
-                  <EmptyState.Body>
-                    <EmptyState.Copy>
-                      <EmptyState.Title level={2}>Trash is empty.</EmptyState.Title>
-                      <EmptyState.Description>
-                        Deleted documents will remain here for 30 days.
-                      </EmptyState.Description>
-                    </EmptyState.Copy>
-                  </EmptyState.Body>
-                </EmptyState.Root>
+              <section data-trash-catalog="">
+                <EmptyMessage
+                  description="Deleted documents will remain here for 30 days."
+                  icon={DeleteIcon}
+                  level={2}
+                  title="Trash is empty."
+                />
               </section>
             ) : (
               <section className={styles["catalog"]} data-trash-catalog="">

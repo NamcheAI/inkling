@@ -4,16 +4,6 @@
     var(--semantic-color-border-secondary);
 }
 
-.empty {
-  padding-block: var(--semantic-dimension-space-padding-xxxx-large);
-}
-
-.illustration {
-  inline-size: var(--semantic-dimension-size-x-large);
-  block-size: var(--semantic-dimension-size-x-large);
-  color: var(--semantic-color-icon-secondary);
-}
-
 .row {
   display: grid;
   grid-template-columns: 5.5rem minmax(0, 1fr) minmax(15rem, 0.4fr);
