@@ -1,6 +1,7 @@
 import { Context, Data, type Effect, type Stream } from "effect";
 
 import type {
+  AuthorizationGrant,
   CatalogSummary,
   PeopleDirectoryEntry,
   PersonReference,
@@ -373,6 +374,19 @@ export interface InklingApplicationService {
     credentials: RequestCredentials,
     keyId: string,
   ) => Effect.Effect<void, ApplicationError>;
+  /** Records the signed-in person's approval of an OAuth client. */
+  readonly createAuthorizationCode: (
+    credentials: RequestCredentials,
+    grant: AuthorizationGrant,
+  ) => Effect.Effect<{ readonly code: string; readonly expiresAt: string }, ApplicationError>;
+  /**
+   * Consumes an authorization code and issues an API key to the client. The
+   * code is spent by the first attempt, successful or not.
+   */
+  readonly exchangeAuthorizationCode: (
+    code: string,
+    grant: Omit<AuthorizationGrant, "clientName">,
+  ) => Effect.Effect<ApiKeyCreated, ApplicationError>;
 }
 
 export const InklingApplication = Context.GenericTag<InklingApplicationService>(

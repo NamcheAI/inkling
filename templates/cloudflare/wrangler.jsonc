@@ -40,6 +40,8 @@
       "/AGENTS.md",
       "/api/*",
       "/mcp",
+      "/oauth/*",
+      "/.well-known/*",
       "/rfc/*",
       "/rfcs/*",
       "/public/*",

@@ -81,7 +81,10 @@ export type {
   ApiKeyIdentity,
   ApiKeyRecord,
   AuthenticationState,
+  AuthorizationCodeRecord,
+  AuthorizationGrant,
   CreatedApiKey,
+  CreatedAuthorizationCode,
   CreatedSession,
   SessionRecord,
   WorkspaceIdentity,
@@ -92,10 +95,13 @@ export {
   authenticateSession,
   AuthenticationError,
   createApiKey,
+  createAuthorizationCode,
   createWorkspaceSession,
   emptyAuthenticationState,
   logoutSession,
   revokeApiKey,
+  takeAuthorizationCode,
+  verifyAuthorizationCode,
 } from "./domain/authentication.ts";
 export type { LineRange, TextReplacement } from "./domain/body.ts";
 export { applyUniqueTextReplacements, BodyEditError, readLineRange } from "./domain/body.ts";

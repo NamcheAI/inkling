@@ -13,6 +13,7 @@ import {
   AuthorizationError,
   BodyEditError,
   createApiKey,
+  createAuthorizationCode,
   createDocumentMetadata,
   createWorkspaceSession,
   Digest,
@@ -41,16 +42,19 @@ import {
   SecretHasher,
   SecureToken,
   StorageError,
+  takeAuthorizationCode,
   tombstoneDocument,
   upsertPerson,
   WorkspaceStateStore,
   logoutSession,
   normalizeSearchText,
   normalizeWorkspaceCatalog,
+  verifyAuthorizationCode,
 } from "@earendil-works/inkling-core";
 import type {
   ApiKeyRecord,
   AuthenticationState,
+  AuthorizationCodeRecord,
   CapabilityAccess,
   CatalogSummary,
   CommentActor,
@@ -1305,6 +1309,78 @@ export function makeLocalInklingApplication(
             ),
           );
         }),
+      createAuthorizationCode: (credentials, grant) =>
+        Effect.gen(function* () {
+          const principal = yield* resolvePrincipal(credentials);
+          if (principal.kind !== "workspace") {
+            return yield* applicationFailure(
+              "forbidden",
+              "Approving an application requires a signed-in workspace session.",
+              403,
+            );
+          }
+          const account = yield* requireAccount(principal);
+          return yield* withState(
+            createAuthorizationCode(
+              state.authentication,
+              account,
+              grant,
+              new Date().toISOString(),
+            ).pipe(
+              Effect.provideService(IdGenerator, ids),
+              Effect.provideService(SecretHasher, hasher),
+              Effect.provideService(SecureToken, tokens),
+              Effect.mapError(toApplicationError),
+              Effect.flatMap((created) =>
+                saveState({ ...state, authentication: created.state }).pipe(
+                  Effect.mapError(toApplicationError),
+                  Effect.as({ code: created.token, expiresAt: created.expiresAt }),
+                ),
+              ),
+            ),
+          );
+        }),
+      exchangeAuthorizationCode: (code, grant) =>
+        withState(
+          Effect.gen(function* () {
+            const now = new Date().toISOString();
+            const taken = takeAuthorizationCode(state.authentication, code, now);
+            yield* saveState({ ...state, authentication: taken.state }).pipe(
+              Effect.mapError(toApplicationError),
+            );
+            if (taken.record === undefined || taken.secret === undefined) {
+              return yield* applicationFailure(
+                "invalid_grant",
+                "The authorization code is invalid, expired, or already used.",
+                400,
+              );
+            }
+            const record: AuthorizationCodeRecord = taken.record;
+            const identity = yield* verifyAuthorizationCode(record, taken.secret, grant, now).pipe(
+              Effect.provideService(SecretHasher, hasher),
+              Effect.mapError(toApplicationError),
+            );
+            const created = yield* createApiKey(
+              state.authentication,
+              identity,
+              record.clientName.slice(0, 200),
+              now,
+              { oauthClientName: record.clientName },
+            ).pipe(
+              Effect.provideService(IdGenerator, ids),
+              Effect.provideService(SecretHasher, hasher),
+              Effect.provideService(SecureToken, tokens),
+              Effect.mapError(toApplicationError),
+            );
+            yield* saveState({ ...state, authentication: created.state }).pipe(
+              Effect.mapError(toApplicationError),
+            );
+            return {
+              key: created.token,
+              metadata: apiKeyDto(created.record, identity.personId),
+            } satisfies ApiKeyCreated;
+          }),
+        ),
       assignRfcNumber: (credentials, rawDocumentId, rfcNumber) =>
         Effect.gen(function* () {
           const room = yield* getRoom(rawDocumentId);
@@ -2573,7 +2649,17 @@ function normalizeAuthenticationState(value: unknown): AuthenticationState {
           (key["role"] === "member" || key["role"] === "administrator"),
       )
     : [];
-  return { apiKeys, sessions };
+  const authorizationCodes = Array.isArray(value["authorizationCodes"])
+    ? value["authorizationCodes"].filter(
+        (code): code is AuthorizationCodeRecord =>
+          Predicate.isReadonlyRecord(code) &&
+          typeof code["id"] === "string" &&
+          typeof code["personId"] === "string" &&
+          typeof code["expiresAt"] === "string" &&
+          (code["role"] === "member" || code["role"] === "administrator"),
+      )
+    : [];
+  return { apiKeys, authorizationCodes, sessions };
 }
 
 function resolveCapability(
@@ -2983,6 +3069,7 @@ function apiKeyDto(record: ApiKeyRecord, fallbackPersonId: PersonReference["id"]
     id: record.id,
     label: record.label,
     lastUsedAt: record.lastUsedAt,
+    oauthClientName: record.oauthClientName,
     personId: record.personId ?? fallbackPersonId,
     revealable: record.retainedSecret !== undefined,
     revokedAt: record.revokedAt,
@@ -3119,7 +3206,7 @@ function toApplicationError(error: unknown): ApplicationError {
       code: error.code,
       message: error.message,
       retryable: false,
-      status: 401,
+      status: error.code === "invalid_grant" ? 400 : 401,
     });
   }
   if (error instanceof AuthorizationError) {

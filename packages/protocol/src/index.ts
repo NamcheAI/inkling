@@ -371,6 +371,8 @@ export const ApiKeySchema = Schema.Struct({
   id: Schema.String,
   label: Schema.String,
   lastUsedAt: Schema.optional(Schema.String),
+  /** Present when an MCP client obtained the key through OAuth sign-in. */
+  oauthClientName: Schema.optional(Schema.String),
   personId: Schema.String,
   revealable: Schema.Boolean,
   revokedAt: Schema.optional(Schema.String),

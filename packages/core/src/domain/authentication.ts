@@ -29,7 +29,42 @@ export interface ApiKeyRecord {
   readonly role?: WorkspaceRole | undefined;
   readonly displayName?: string | undefined;
   readonly lastUsedAt?: string | undefined;
+  /** Set when the key was issued to an OAuth client instead of created by its owner. */
+  readonly oauthClientName?: string | undefined;
   readonly revokedAt?: string | undefined;
+}
+
+/**
+ * A pending OAuth authorization code. Codes are single-use, expire quickly,
+ * and are bound to the approving person, the client, its redirect URI, and a
+ * PKCE challenge. Only a hash of the secret is stored.
+ */
+export interface AuthorizationCodeRecord {
+  readonly id: string;
+  readonly tokenHash: string;
+  readonly clientId: string;
+  readonly clientName: string;
+  readonly redirectUri: string;
+  /** Base64url SHA-256 of the client's PKCE code verifier. */
+  readonly codeChallenge: string;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly personId: PersonId;
+  readonly role: WorkspaceRole;
+  readonly displayName?: string | undefined;
+}
+
+export interface AuthorizationGrant {
+  readonly clientId: string;
+  readonly clientName: string;
+  readonly redirectUri: string;
+  readonly codeChallenge: string;
+}
+
+export interface CreatedAuthorizationCode {
+  readonly state: AuthenticationState;
+  readonly token: string;
+  readonly expiresAt: string;
 }
 
 export interface ApiKeyIdentity {
@@ -41,6 +76,7 @@ export interface ApiKeyIdentity {
 export interface AuthenticationState {
   readonly sessions: readonly SessionRecord[];
   readonly apiKeys: readonly ApiKeyRecord[];
+  readonly authorizationCodes: readonly AuthorizationCodeRecord[];
 }
 
 export interface CreatedSession {
@@ -63,12 +99,12 @@ export interface CreatedApiKey {
 }
 
 export class AuthenticationError extends Data.TaggedError("AuthenticationError")<{
-  readonly code: "invalid_token";
+  readonly code: "invalid_grant" | "invalid_token";
   readonly message: string;
 }> {}
 
 export function emptyAuthenticationState(): AuthenticationState {
-  return { apiKeys: [], sessions: [] };
+  return { apiKeys: [], authorizationCodes: [], sessions: [] };
 }
 
 export function authenticateSession(
@@ -169,6 +205,10 @@ export function createApiKey(
   identity: ApiKeyIdentity,
   label: string,
   now: string,
+  options: {
+    /** OAuth clients keep their own copy; their keys are never revealable. */
+    readonly oauthClientName?: string | undefined;
+  } = {},
 ): Effect.Effect<
   CreatedApiKey,
   AuthenticationError | StorageError,
@@ -189,8 +229,10 @@ export function createApiKey(
       displayName: identity.displayName,
       id,
       label: normalizedLabel,
+      ...(options.oauthClientName === undefined
+        ? { retainedSecret: secret }
+        : { oauthClientName: options.oauthClientName }),
       personId: identity.personId,
-      retainedSecret: secret,
       role: identity.role,
       tokenHash: yield* hasher.hash(secret),
     };
@@ -275,6 +317,121 @@ export function revokeApiKey(
       recordIndex === index ? { ...record, revokedAt: now } : record,
     ),
   });
+}
+
+const authorizationCodeLifetimeMilliseconds = 5 * 60 * 1000;
+const maximumPendingAuthorizationCodes = 20;
+
+export function createAuthorizationCode(
+  state: AuthenticationState,
+  identity: ApiKeyIdentity,
+  grant: AuthorizationGrant,
+  now: string,
+): Effect.Effect<
+  CreatedAuthorizationCode,
+  AuthenticationError | StorageError,
+  typeof IdGenerator.Service | typeof SecretHasher.Service | typeof SecureToken.Service
+> {
+  return Effect.gen(function* () {
+    const hasher = yield* SecretHasher;
+    const ids = yield* IdGenerator;
+    const tokens = yield* SecureToken;
+    const id = yield* ids.generate(identifierTag.authorizationCode);
+    const secret = yield* tokens.generate(32);
+    const expiresAt = new Date(
+      Date.parse(now) + authorizationCodeLifetimeMilliseconds,
+    ).toISOString();
+    const record: AuthorizationCodeRecord = {
+      clientId: grant.clientId,
+      clientName: grant.clientName,
+      codeChallenge: grant.codeChallenge,
+      createdAt: now,
+      displayName: identity.displayName,
+      expiresAt,
+      id,
+      personId: identity.personId,
+      redirectUri: grant.redirectUri,
+      role: identity.role,
+      tokenHash: yield* hasher.hash(secret),
+    };
+    const pending = liveAuthorizationCodes(state, now);
+    const ownPending = pending.filter((code) => code.personId === identity.personId);
+    const evicted = new Set(
+      ownPending
+        .slice(0, Math.max(0, ownPending.length - maximumPendingAuthorizationCodes + 1))
+        .map((code) => code.id),
+    );
+    return {
+      expiresAt,
+      state: {
+        ...state,
+        authorizationCodes: [...pending.filter((code) => !evicted.has(code.id)), record],
+      },
+      token: `${id}.${secret}`,
+    };
+  });
+}
+
+/**
+ * Removes the code named by `token` (and every expired code) from the state.
+ * Callers persist the returned state before verifying, so a code is consumed
+ * by its first redemption attempt whether or not that attempt succeeds.
+ */
+export function takeAuthorizationCode(
+  state: AuthenticationState,
+  token: string,
+  now: string,
+): {
+  readonly record?: AuthorizationCodeRecord | undefined;
+  readonly secret?: string | undefined;
+  readonly state: AuthenticationState;
+} {
+  const [id, secret, extra] = token.split(".");
+  const pending = liveAuthorizationCodes(state, now);
+  const record =
+    id === undefined || secret === undefined || extra !== undefined
+      ? undefined
+      : pending.find((code) => code.id === id);
+  return {
+    record,
+    secret: record === undefined ? undefined : secret,
+    state: {
+      ...state,
+      authorizationCodes: pending.filter((code) => code.id !== record?.id),
+    },
+  };
+}
+
+export function verifyAuthorizationCode(
+  record: AuthorizationCodeRecord,
+  secret: string,
+  grant: Omit<AuthorizationGrant, "clientName">,
+  now: string,
+): Effect.Effect<ApiKeyIdentity, AuthenticationError | StorageError, typeof SecretHasher.Service> {
+  return Effect.gen(function* () {
+    const hasher = yield* SecretHasher;
+    const valid =
+      Date.parse(record.expiresAt) > Date.parse(now) &&
+      record.clientId === grant.clientId &&
+      record.redirectUri === grant.redirectUri &&
+      record.codeChallenge === grant.codeChallenge &&
+      isWorkspaceRole(record.role) &&
+      (yield* hasher.verify(secret, record.tokenHash));
+    if (!valid) {
+      return yield* authenticationFailure(
+        "invalid_grant",
+        "The authorization code is invalid, expired, or was issued to another client.",
+      );
+    }
+    return { displayName: record.displayName, personId: record.personId, role: record.role };
+  });
+}
+
+function liveAuthorizationCodes(
+  state: AuthenticationState,
+  now: string,
+): readonly AuthorizationCodeRecord[] {
+  return state.authorizationCodes.filter((code) => Date.parse(code.expiresAt) > Date.parse(now));
 }
 
 function isWorkspaceRole(role: WorkspaceRole | undefined): role is WorkspaceRole {

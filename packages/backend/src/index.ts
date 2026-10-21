@@ -36,6 +36,23 @@ import {
 } from "./application.ts";
 import type { InklingApplicationService, RequestCredentials } from "./application.ts";
 import { finishGoogleAuthentication, startGoogleAuthentication } from "./google-auth.ts";
+import {
+  authorizationPage,
+  authorizationServerMetadataResponse,
+  corsPreflightResponse,
+  exchangeToken,
+  protectedResourceMetadataResponse,
+  registerClient,
+  submitAuthorization,
+} from "./mcp/oauth.ts";
+import {
+  authorizationServerMetadataPath,
+  isOAuthPath,
+  oauthAuthorizePath,
+  oauthRegisterPath,
+  oauthTokenPath,
+  protectedResourceMetadataPath,
+} from "./mcp/paths.ts";
 import { handleMcpRequest, mcpEndpointPath } from "./mcp/server.ts";
 import type { GoogleAuthenticationEnvironment } from "./google-auth.ts";
 import { canonicalRfcPath, rfcRedirectLocation } from "./routes.ts";
@@ -68,6 +85,7 @@ export {
   mcpProtocolVersions,
 } from "./mcp/server.ts";
 export type { McpDispatch, McpOptions } from "./mcp/server.ts";
+export { isOAuthPath, mcpResourceMetadataUrl } from "./mcp/paths.ts";
 export { DigestLive, IdGeneratorLive, SecretHasherLive, SecureTokenLive } from "./crypto.ts";
 export {
   finishGoogleAuthentication,
@@ -157,6 +175,37 @@ export function createBackendApp(options: BackendOptions = {}): Hono {
         version,
       }),
     ),
+  );
+
+  // OAuth for MCP clients; see ./mcp/oauth.ts.
+  app.on(
+    ["GET", "OPTIONS"],
+    [protectedResourceMetadataPath, `${protectedResourceMetadataPath}${mcpEndpointPath}`],
+    (context) =>
+      context.req.method === "OPTIONS"
+        ? corsPreflightResponse()
+        : protectedResourceMetadataResponse(new URL(context.req.url).origin),
+  );
+  app.on(["GET", "OPTIONS"], authorizationServerMetadataPath, (context) =>
+    context.req.method === "OPTIONS"
+      ? corsPreflightResponse()
+      : authorizationServerMetadataResponse(new URL(context.req.url).origin),
+  );
+  app.options(oauthRegisterPath, () => corsPreflightResponse());
+  app.post(oauthRegisterPath, (context) => Effect.runPromise(registerClient(context.req.raw)));
+  app.get(oauthAuthorizePath, (context) =>
+    withService(context, options, (service) =>
+      authorizationPage(context.req.raw, credentials(context), service),
+    ),
+  );
+  app.post(oauthAuthorizePath, (context) =>
+    withService(context, options, (service) =>
+      submitAuthorization(context.req.raw, credentials(context), service),
+    ),
+  );
+  app.options(oauthTokenPath, () => corsPreflightResponse());
+  app.post(oauthTokenPath, (context) =>
+    withService(context, options, (service) => exchangeToken(context.req.raw, service)),
   );
 
   app.get("/theme.css", () => themeCssResponse(options.theme ?? defaultTheme));
@@ -891,16 +940,30 @@ If your tools already include Inkling tools such as \`search_documents\` and \`r
 
 ## Connect the MCP server
 
-The endpoint speaks the Model Context Protocol over Streamable HTTP and authenticates with a personal Inkling API key sent as a bearer token. Ask the user to get a key:
+The endpoint speaks the Model Context Protocol over Streamable HTTP. Agents that support MCP OAuth only need the URL: on first use they open a browser where the user signs in to Inkling and approves access. For example:
+
+\`\`\`sh
+# Claude Code; then run /mcp inside Claude Code and choose Authenticate
+claude mcp add --transport http inkling ${endpoint}
+\`\`\`
+
+\`\`\`json
+{ "mcpServers": { "inkling": { "url": "${endpoint}" } } }
+\`\`\`
+
+Most agents load new MCP servers only when they start, so the user may need to restart the agent. Approved agents appear under **API keys** in the account menu, where the user can revoke them.
+
+### Agents without OAuth support
+
+Send a personal API key as a bearer token instead. Ask the user to get one:
 
 1. Open ${baseUrl} and sign in.
 2. Open the account menu in the top-right corner and choose **API keys**.
 3. Reuse an active key when possible: click **Show**, then copy it. Create another key only when there is no reusable key or the user wants independently revocable access.
 
-Then have the user register the server with their agent, keeping the key in an environment variable or the agent's own secret storage. For example:
+Then register the server with the key kept in an environment variable or the agent's own secret storage:
 
 \`\`\`sh
-# Claude Code
 claude mcp add --transport http inkling ${endpoint} --header "Authorization: Bearer $INKLING_API_KEY"
 \`\`\`
 
@@ -911,18 +974,7 @@ url = "${endpoint}"
 bearer_token_env_var = "INKLING_API_KEY"
 \`\`\`
 
-\`\`\`json
-{
-  "mcpServers": {
-    "inkling": {
-      "url": "${endpoint}",
-      "headers": { "Authorization": "Bearer \${INKLING_API_KEY}" }
-    }
-  }
-}
-\`\`\`
-
-Most agents load new MCP servers only when they start, so the user may need to restart the agent. API keys belong to the user who created them and have that user's workspace permissions; everything the agent does is attributed to that user. The signed-in user can reveal a retained key again from the API keys dialog. Do not paste the key into source files, chat transcripts, AGENTS.md, or skills.
+Access belongs to the user who approved it or created the key and carries that user's workspace permissions; everything the agent does is attributed to that user. Do not paste keys into source files, chat transcripts, AGENTS.md, or skills.
 
 ## Open a linked Inkling URL
 
@@ -962,6 +1014,7 @@ Workspace administration that does not fit a tool call, such as imports, backups
 
 function operationCategory(pathname: string): string {
   if (pathname === mcpEndpointPath) return "mcp";
+  if (isOAuthPath(pathname)) return "oauth";
   if (pathname.includes("/attachments")) return "attachment";
   if (pathname.includes("/comments")) return "comment";
   if (pathname.includes("/publish")) return "publication";
@@ -995,6 +1048,25 @@ function execute<A>(
   return options.runtime
     .runPromise(Effect.flatMap(InklingApplication, operation).pipe(Effect.either))
     .then((result) => (Either.isRight(result) ? respond(result.right) : respondError(result.left)));
+}
+
+function withService(
+  context: HonoContext,
+  options: BackendOptions,
+  handler: (service: InklingApplicationService) => Effect.Effect<Response>,
+): Promise<Response> {
+  return options.runtime === undefined
+    ? Promise.resolve(
+        context.json(
+          {
+            code: "service_unavailable",
+            message: "The Inkling application runtime is not configured.",
+            retryable: true,
+          } satisfies ProtocolError,
+          503,
+        ),
+      )
+    : options.runtime.runPromise(Effect.flatMap(InklingApplication, handler));
 }
 
 function readJson<A, I>(

@@ -5,6 +5,7 @@ const maximumUuidV7Timestamp = 0xffff_ffff_ffff;
 export const identifierTag = {
   apiKey: "key",
   attachment: "att",
+  authorizationCode: "oac",
   capability: "cap",
   clientUpdate: "upd",
   commentMessage: "msg",

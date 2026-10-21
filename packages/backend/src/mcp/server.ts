@@ -4,6 +4,8 @@ import { AuthenticationStatusSchema } from "@earendil-works/inkling-protocol";
 
 import { makeInklingApi } from "./api.ts";
 import type { InklingApi, InklingApiError, McpDispatch } from "./api.ts";
+import { corsHeaders, corsPreflightResponse } from "./oauth.ts";
+import { mcpResourceMetadataUrl, oauthScope } from "./paths.ts";
 import { inklingTools } from "./tools.ts";
 import type { McpCallToolResult } from "./tools.ts";
 
@@ -19,22 +21,26 @@ import type { McpCallToolResult } from "./tools.ts";
  * server-to-client stream) answers 405. Any isolate or process can serve any
  * request, which keeps the endpoint trivially compatible with Workers.
  *
- * Every request must carry an Inkling API key as a bearer token; `initialize`
- * also validates it, so a bad key fails when the client connects rather than
- * at the first tool call. Browser session cookies are never accepted here:
- * the endpoint performs mutations and has no CSRF protection of its own.
+ * Every request must carry an Inkling API key as a bearer token, obtained
+ * either through OAuth sign-in (see `./oauth.ts`) or from the API keys dialog.
+ * `initialize` also validates it, so a bad key fails when the client connects
+ * rather than at the first tool call. A 401 names the protected-resource
+ * metadata so OAuth clients can discover how to sign in. Browser session
+ * cookies are never accepted here: the endpoint performs mutations and has no
+ * CSRF protection of its own. For the same reason it can allow any origin
+ * through CORS, which lets browser-based MCP clients connect.
  * Tool calls are re-dispatched as ordinary `/api` requests with the same
  * bearer (see `./api.ts`), so authorization is the operations' own.
  *
  * The tool list is static: Inkling has no feature flags, and operations the
  * caller's role does not permit answer with their own error. Not provided:
- * resources, prompts, sampling, elicitation, progress, batching, and OAuth.
+ * resources, prompts, sampling, elicitation, progress, and batching.
  */
 
 export type { McpDispatch } from "./api.ts";
+export { mcpEndpointPath } from "./paths.ts";
 
 export const mcpProtocolVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
-export const mcpEndpointPath = "/mcp";
 
 const latestProtocolVersion = "2025-11-25";
 const maximumMessageBytes = 8_000_000;
@@ -93,9 +99,10 @@ Changes are attributed to the person who owns the API key and carry that person'
 
 export function handleMcpRequest(request: Request, options: McpOptions): Effect.Effect<Response> {
   return Effect.gen(function* () {
+    if (request.method === "OPTIONS") return corsPreflightResponse();
     if (request.method !== "POST") {
       return new Response(null, {
-        headers: { Allow: "POST", "Cache-Control": "no-store" },
+        headers: { ...corsHeaders, Allow: "POST", "Cache-Control": "no-store" },
         status: 405,
       });
     }
@@ -111,7 +118,8 @@ export function handleMcpRequest(request: Request, options: McpOptions): Effect.
     const bearerToken = bearer(request);
     if (bearerToken === undefined) {
       return unauthorizedResponse(
-        new Unauthorized({ message: "An Inkling API key is required as a bearer token." }),
+        request,
+        new Unauthorized({ message: "Inkling requires a bearer token." }),
       );
     }
 
@@ -137,7 +145,7 @@ export function handleMcpRequest(request: Request, options: McpOptions): Effect.
     const { id, method, params } = message.right;
     if (typeof method !== "string" || id === undefined) {
       // Notifications, and responses to requests this server never sends.
-      return new Response(null, { status: 202 });
+      return new Response(null, { headers: corsHeaders, status: 202 });
     }
     if (typeof id !== "string" && typeof id !== "number") {
       return jsonRpcErrorResponse(400, null, jsonRpcInvalidRequest, "Invalid JSON-RPC id.");
@@ -150,7 +158,7 @@ export function handleMcpRequest(request: Request, options: McpOptions): Effect.
       Effect.catchTags({
         JsonRpcError: (error) =>
           Effect.succeed(jsonRpcErrorResponse(200, id, error.code, error.message)),
-        Unauthorized: (error) => Effect.succeed(unauthorizedResponse(error, id)),
+        Unauthorized: (error) => Effect.succeed(unauthorizedResponse(request, error, id)),
       }),
     );
   }).pipe(
@@ -283,16 +291,22 @@ function bearer(request: Request): string | undefined {
   return match?.[1];
 }
 
-function unauthorizedResponse(error: Unauthorized, id: JsonRpcId | null = null): Response {
+function unauthorizedResponse(
+  request: Request,
+  error: Unauthorized,
+  id: JsonRpcId | null = null,
+): Response {
   const challenge = [
     'realm="Inkling"',
+    `resource_metadata="${mcpResourceMetadataUrl(new URL(request.url).origin)}"`,
+    `scope="${oauthScope}"`,
     ...(error.error === undefined ? [] : [`error="${error.error}"`]),
   ].join(", ");
   return jsonRpcErrorResponse(
     401,
     id,
     jsonRpcInvalidRequest,
-    `${error.message} Create one under API keys in the Inkling account menu.`,
+    `${error.message} Sign in through your MCP client, or create a key under API keys in the Inkling account menu.`,
     { "WWW-Authenticate": `Bearer ${challenge}` },
   );
 }
@@ -304,6 +318,7 @@ function jsonResponse(
 ): Response {
   return new Response(JSON.stringify(body), {
     headers: {
+      ...corsHeaders,
       "Cache-Control": "no-store",
       "Content-Type": "application/json",
       ...headers,

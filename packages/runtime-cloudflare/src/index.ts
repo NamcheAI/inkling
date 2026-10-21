@@ -24,6 +24,7 @@ import {
   finishGoogleAuthentication,
   handleMcpRequest,
   IdGeneratorLive,
+  isOAuthPath,
   InklingApplication,
   localApplicationLayer,
   mcpEndpointPath,
@@ -1294,6 +1295,7 @@ function mutationProtectionError(request: Request): RpcError | undefined {
 function isApplicationPath(pathname: string): boolean {
   return (
     pathname === "/AGENTS.md" ||
+    isOAuthPath(pathname) ||
     pathname === "/api" ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/state/") ||

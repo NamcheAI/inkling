@@ -12,7 +12,7 @@ import {
   IdGeneratorLive,
 } from "../src/index.ts";
 
-test("served agent instructions explain MCP setup with personal API keys", async () => {
+test("served agent instructions explain MCP sign-in and API key fallback", async () => {
   const response = await createBackendApp({ version: "test" }).request(
     "https://rfcs.example.com/AGENTS.md",
   );
@@ -26,11 +26,13 @@ test("served agent instructions explain MCP setup with personal API keys", async
   assert.match(body, /Reuse an active key.*click \*\*Show\*\*/su);
   assert.match(
     body,
-    /claude mcp add --transport http inkling https:\/\/rfcs\.example\.com\/mcp --header "Authorization: Bearer \$INKLING_API_KEY"/u,
+    /claude mcp add --transport http inkling https:\/\/rfcs\.example\.com\/mcp\n/u,
   );
-  assert.match(body, /"Authorization": "Bearer \$\{INKLING_API_KEY\}"/u);
+  assert.match(body, /signs in to Inkling and approves access/u);
+  assert.match(body, /--header "Authorization: Bearer \$INKLING_API_KEY"/u);
+  assert.match(body, /bearer_token_env_var = "INKLING_API_KEY"/u);
   assert.match(body, /https:\/\/rfcs\.example\.com\/rfc\/0057/u);
-  assert.match(body, /API keys belong to the user who created them/u);
+  assert.match(body, /carries that user's workspace permissions/u);
   assert.match(body, /__require_auth=1/u);
   assert.match(body, /Permanent deletion is not available to agents/u);
   assert.match(body, /Never print, commit, log, or embed API keys/u);

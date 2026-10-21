@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
@@ -497,6 +497,62 @@ test(
         const persistedNote = await readDocument(running.baseUrl, agentNoteId, authorization);
         assert.ok(persistedNote.body.includes("Edited through the Worker router."));
         assert.equal(persistedNote.comments.threads.length, 1);
+
+        const metadata = await fetch(`${running.baseUrl}/.well-known/oauth-protected-resource/mcp`);
+        assert.equal(
+          ((await metadata.json()) as { resource: string }).resource,
+          `${running.baseUrl}/mcp`,
+        );
+        // Approval needs a live browser session. Each person keeps one session, and the
+        // protected-link sign-in above replaced the first one.
+        const oauthCookie = await loginWithGoogle(running.baseUrl);
+        const oauthCsrf = cookieValue(oauthCookie, "inkling_csrf");
+        assert.ok(oauthCsrf);
+        const oauthRedirect = "http://127.0.0.1:45678/callback";
+        const oauthClient = (await (
+          await fetch(`${running.baseUrl}/oauth/register`, {
+            body: JSON.stringify({ client_name: "Worker agent", redirect_uris: [oauthRedirect] }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          })
+        ).json()) as { client_id: string };
+        const oauthVerifier = "cloudflare-verifier-0123456789-abcdefghijklmnop";
+        const oauthParameters = new URLSearchParams({
+          client_id: oauthClient.client_id,
+          code_challenge: createHash("sha256").update(oauthVerifier).digest("base64url"),
+          code_challenge_method: "S256",
+          csrf: oauthCsrf,
+          decision: "allow",
+          redirect_uri: oauthRedirect,
+          response_type: "code",
+        });
+        const approval = await fetch(`${running.baseUrl}/oauth/authorize`, {
+          body: oauthParameters,
+          headers: { Cookie: oauthCookie, Origin: running.baseUrl },
+          method: "POST",
+          redirect: "manual",
+        });
+        assert.equal(approval.status, 303);
+        const oauthCode = new URL(approval.headers.get("location") ?? "").searchParams.get("code");
+        assert.ok(oauthCode);
+        const oauthToken = await fetch(`${running.baseUrl}/oauth/token`, {
+          body: new URLSearchParams({
+            client_id: oauthClient.client_id,
+            code: oauthCode,
+            code_verifier: oauthVerifier,
+            grant_type: "authorization_code",
+            redirect_uri: oauthRedirect,
+          }),
+          method: "POST",
+        });
+        assert.equal(oauthToken.status, 200);
+        const oauthAccess = ((await oauthToken.json()) as { access_token: string }).access_token;
+        const oauthInitialize = await fetch(`${running.baseUrl}/mcp`, {
+          body: JSON.stringify({ id: 1, jsonrpc: "2.0", method: "initialize", params: {} }),
+          headers: { Authorization: `Bearer ${oauthAccess}`, "Content-Type": "application/json" },
+          method: "POST",
+        });
+        assert.equal(oauthInitialize.status, 200);
       } finally {
         await running.stop();
         running = undefined;

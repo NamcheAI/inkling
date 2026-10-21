@@ -89,16 +89,18 @@ Search supports Gmail-style filters:
 Every Inkling instance is an MCP server at `/mcp` (Streamable HTTP). Agents
 search, read, create, edit, comment on, publish, and trash documents through it
 with the same authorization rules as people, and their edits appear live for
-anyone editing in the browser. Authenticate with a personal API key: open the
-account menu, choose **API keys**, and send the key as a bearer token.
+anyone editing in the browser. Agents that support MCP OAuth only need the URL;
+the user signs in through the browser and approves access:
 
 ```sh
-claude mcp add --transport http inkling https://rfcs.example.com/mcp \
-  --header "Authorization: Bearer $INKLING_API_KEY"
+claude mcp add --transport http inkling https://rfcs.example.com/mcp
 ```
 
-Other agents take the same URL and `Authorization` header in their MCP
-configuration. Each instance also serves an origin-aware
+Approved agents are listed under **API keys** in the account menu, where they
+can be revoked. Agents without OAuth support can send a personal API key from
+the same dialog as a bearer token instead.
+
+Each instance also serves an origin-aware
 [`/AGENTS.md`](http://localhost:8787/AGENTS.md) with setup steps for common
 agents and safe editing guidance; point an agent at it when it encounters an
 Inkling URL. The served instructions never contain credentials.

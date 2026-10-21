@@ -150,21 +150,27 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
                     ) : (
                       <code className={styles["maskedKey"]}>{key.id}.••••••••••••</code>
                     )}
-                    {!key.revealable ? (
+                    {key.oauthClientName !== undefined ? (
+                      <small data-oauth-key="">
+                        Connected by signing in from {key.oauthClientName}. Revoke it to disconnect.
+                      </small>
+                    ) : !key.revealable ? (
                       <small className={styles["legacyKey"]}>
                         This older key cannot be shown again. Replace it when convenient.
                       </small>
                     ) : null}
                   </div>
                   <div className={styles["keyActions"]}>
-                    <Button
-                      data-show-api-key={key.id}
-                      disabled={!key.revealable || revealingKeyId === key.id}
-                      onClick={() => toggleKey(key)}
-                      variant="text"
-                    >
-                      {revealingKeyId === key.id ? "Showing…" : visible ? "Hide" : "Show"}
-                    </Button>
+                    {key.oauthClientName === undefined ? (
+                      <Button
+                        data-show-api-key={key.id}
+                        disabled={!key.revealable || revealingKeyId === key.id}
+                        onClick={() => toggleKey(key)}
+                        variant="text"
+                      >
+                        {revealingKeyId === key.id ? "Showing…" : visible ? "Hide" : "Show"}
+                      </Button>
+                    ) : null}
                     {visible && secret !== undefined ? (
                       <Button
                         data-copy-api-key=""

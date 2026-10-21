@@ -82,3 +82,7 @@ pnpm update --latest @earendil-works/inkling-frontend \
   @earendil-works/inkling-runtime-cloudflare
 pnpm check
 ```
+
+Compare `assets.run_worker_first` in `wrangler.jsonc` with this template when updating. Paths
+missing from it are answered by the static frontend instead of the Worker; agents need `/mcp`,
+`/oauth/*`, and `/.well-known/*`.

@@ -534,3 +534,73 @@ h4 {
     scroll-behavior: auto;
   }
 }
+
+.oauth-shell {
+  padding: clamp(1.25rem, 6vw, 4rem) 0.875rem 3rem;
+}
+
+.oauth-paper {
+  width: min(100%, 34rem);
+  margin: 0 auto;
+  padding: 1.75rem;
+  border: 1px solid var(--public-border);
+  background: var(--public-paper);
+  box-shadow: 0 10px 30px var(--shadow-soft);
+  font-family: var(--sans);
+  font-size: var(--font-ui);
+}
+
+.oauth-paper h1 {
+  margin: 0 0 1rem;
+  font-size: 1.6rem;
+  font-weight: 550;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.oauth-paper p,
+.oauth-paper ul {
+  margin: 0 0 1rem;
+}
+
+.oauth-paper ul {
+  padding-left: 1.25rem;
+}
+
+.oauth-muted {
+  color: var(--public-muted);
+}
+
+.oauth-destination {
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: var(--font-small);
+}
+
+.oauth-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+
+.oauth-actions button {
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--public-border-strong);
+  border-radius: 999px;
+  background: var(--public-paper);
+  color: var(--public-text);
+  font: 600 var(--font-ui) var(--sans);
+  cursor: pointer;
+}
+
+.oauth-actions button[value="allow"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.oauth-actions button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

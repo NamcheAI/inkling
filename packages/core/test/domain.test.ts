@@ -13,6 +13,7 @@ import {
   assignRfcNumber,
   authorizeDocument,
   createApiKey,
+  createAuthorizationCode,
   createCommentThread,
   createDocumentMetadata,
   createWorkspaceSession,
@@ -38,6 +39,8 @@ import {
   searchCatalog,
   SecretHasher,
   SecureToken,
+  takeAuthorizationCode,
+  verifyAuthorizationCode,
   emptyAuthenticationState,
   emptyWorkspaceCatalog,
   hasPendingPublicationChanges,
@@ -292,6 +295,74 @@ test("API keys belong to their creator and retain that user's role", async () =>
     revokeApiKey(created.state, created.record.id, accountId, now),
   );
   assert.equal(revoked.apiKeys[0]?.revokedAt, now);
+});
+
+test("authorization codes are single-use and bound to client, redirect, and PKCE", async () => {
+  const accountId = await Effect.runPromise(personId("writer@example.com"));
+  const hasher = {
+    hash: (secret: string) => Effect.succeed(`hashed:${secret}`),
+    verify: (secret: string, hash: string) => Effect.succeed(hash === `hashed:${secret}`),
+  };
+  const grant = {
+    clientId: "mcp_client",
+    clientName: "Agent",
+    codeChallenge: "challenge",
+    redirectUri: "http://127.0.0.1:3000/callback",
+  };
+  const created = await Effect.runPromise(
+    createAuthorizationCode(
+      emptyAuthenticationState(),
+      { displayName: "Example Writer", personId: accountId, role: "member" },
+      grant,
+      now,
+    ).pipe(
+      Effect.provideService(IdGenerator, { generate: () => Effect.succeed("oac_1") }),
+      Effect.provideService(SecretHasher, hasher),
+      Effect.provideService(SecureToken, { generate: () => Effect.succeed("code-secret") }),
+    ),
+  );
+  assert.equal(created.token, "oac_1.code-secret");
+  assert.equal(created.state.authorizationCodes[0]?.tokenHash, "hashed:code-secret");
+
+  const verify = (
+    taken: ReturnType<typeof takeAuthorizationCode>,
+    overrides: Partial<typeof grant> = {},
+    at = now,
+  ) =>
+    taken.record === undefined || taken.secret === undefined
+      ? Promise.resolve(Either.left("missing"))
+      : Effect.runPromise(
+          verifyAuthorizationCode(taken.record, taken.secret, { ...grant, ...overrides }, at).pipe(
+            Effect.provideService(SecretHasher, hasher),
+            Effect.either,
+          ),
+        );
+
+  const taken = takeAuthorizationCode(created.state, created.token, now);
+  assert.equal(taken.state.authorizationCodes.length, 0);
+  assert.deepEqual(
+    await verify(taken),
+    Either.right({ displayName: "Example Writer", personId: accountId, role: "member" }),
+  );
+  assert.equal(takeAuthorizationCode(taken.state, created.token, now).record, undefined);
+
+  const mismatches = await Promise.all(
+    [
+      { codeChallenge: "other" },
+      { clientId: "mcp_other" },
+      { redirectUri: "http://127.0.0.1:3000/elsewhere" },
+    ].map((overrides) =>
+      verify(takeAuthorizationCode(created.state, created.token, now), overrides),
+    ),
+  );
+  assert.ok(mismatches.every(Either.isLeft));
+  const forged = takeAuthorizationCode(created.state, "oac_1.wrong", now);
+  assert.equal(Either.isLeft(await verify(forged)), true);
+
+  const later = new Date(Date.parse(now) + 6 * 60 * 1000).toISOString();
+  const expired = takeAuthorizationCode(created.state, created.token, later);
+  assert.equal(expired.record, undefined);
+  assert.equal(expired.state.authorizationCodes.length, 0);
 });
 
 test("private and confidential visibility share workspace-only authorization", async () => {

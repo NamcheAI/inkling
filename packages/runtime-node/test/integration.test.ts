@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -1130,6 +1131,127 @@ test("agents read and write documents over MCP", { timeout: 30_000 }, async () =
     await rm(directory, { force: true, recursive: true });
   }
 });
+
+test(
+  "MCP clients sign in with OAuth and receive revocable API keys",
+  { timeout: 30_000 },
+  async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "inkling-oauth-"));
+    try {
+      await withServer(directory, async (baseUrl, session) => {
+        const redirectUri = "http://127.0.0.1:45678/callback";
+        const registration = await fetch(`${baseUrl}/oauth/register`, {
+          body: JSON.stringify({ client_name: "Integration agent", redirect_uris: [redirectUri] }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        assert.equal(registration.status, 201);
+        const clientId = ((await registration.json()) as { client_id: string }).client_id;
+
+        const verifier = "integration-verifier-0123456789-abcdefghijklmnop";
+        const challenge = createHash("sha256").update(verifier).digest("base64url");
+        const authorize = async (): Promise<string> => {
+          const parameters = new URLSearchParams({
+            client_id: clientId,
+            code_challenge: challenge,
+            code_challenge_method: "S256",
+            redirect_uri: redirectUri,
+            resource: `${baseUrl}/mcp`,
+            response_type: "code",
+            state: "integration-state",
+          });
+          const consent = await fetch(`${baseUrl}/oauth/authorize?${parameters}`, {
+            headers: { Cookie: session.cookieHeader },
+          });
+          assert.equal(consent.status, 200);
+          assert.match(await consent.text(), /Connect Integration agent to Inkling\?/u);
+          parameters.set("csrf", session.csrf);
+          parameters.set("decision", "allow");
+          const approved = await fetch(`${baseUrl}/oauth/authorize`, {
+            body: parameters,
+            headers: { Cookie: session.cookieHeader, Origin: baseUrl },
+            method: "POST",
+            redirect: "manual",
+          });
+          assert.equal(approved.status, 303);
+          const location = new URL(approved.headers.get("location") ?? "");
+          assert.equal(`${location.origin}${location.pathname}`, redirectUri);
+          assert.equal(location.searchParams.get("state"), "integration-state");
+          assert.equal(location.searchParams.get("iss"), baseUrl);
+          const code = location.searchParams.get("code");
+          assert.ok(code);
+          return code;
+        };
+        const redeem = (code: string, codeVerifier: string) =>
+          fetch(`${baseUrl}/oauth/token`, {
+            body: new URLSearchParams({
+              client_id: clientId,
+              code,
+              code_verifier: codeVerifier,
+              grant_type: "authorization_code",
+              redirect_uri: redirectUri,
+              resource: `${baseUrl}/mcp`,
+            }),
+            method: "POST",
+          });
+
+        // A failed attempt spends the code, so a stolen code cannot be retried.
+        const guessed = await authorize();
+        const wrong = await redeem(guessed, "wrong-verifier-0123456789-abcdefghijklmnopqrstu");
+        assert.equal(wrong.status, 400);
+        assert.equal(((await wrong.json()) as { error: string }).error, "invalid_grant");
+        assert.equal((await redeem(guessed, verifier)).status, 400);
+
+        const code = await authorize();
+        const issued = await redeem(code, verifier);
+        assert.equal(issued.status, 200);
+        assert.equal(issued.headers.get("cache-control"), "no-store");
+        const token = (await issued.json()) as { access_token: string; token_type: string };
+        assert.equal(token.token_type, "Bearer");
+        assert.equal((await redeem(code, verifier)).status, 400);
+
+        const initialized = await fetch(`${baseUrl}/mcp`, {
+          body: JSON.stringify({ id: 1, jsonrpc: "2.0", method: "initialize", params: {} }),
+          headers: {
+            Authorization: `Bearer ${token.access_token}`,
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        });
+        assert.equal(initialized.status, 200);
+        const created = await fetch(`${baseUrl}/mcp`, {
+          body: JSON.stringify({
+            id: 2,
+            jsonrpc: "2.0",
+            method: "tools/call",
+            params: { arguments: { title: "Signed in note" }, name: "create_document" },
+          }),
+          headers: {
+            Authorization: `Bearer ${token.access_token}`,
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        });
+        const result = ((await created.json()) as { result: any }).result;
+        assert.equal(result.structuredContent.metadata.authors[0].displayName, "Integration Admin");
+
+        const keys = (await (
+          await fetch(`${baseUrl}/api/api-keys`, { headers: { Cookie: session.cookieHeader } })
+        ).json()) as { label: string; oauthClientName?: string; revealable: boolean }[];
+        assert.deepEqual(
+          keys.map(({ label, oauthClientName, revealable }) => ({
+            label,
+            oauthClientName,
+            revealable,
+          })),
+          [{ label: "Integration agent", oauthClientName: "Integration agent", revealable: false }],
+        );
+      });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  },
+);
 
 async function withServer<A>(
   directory: string,
