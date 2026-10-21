@@ -69,8 +69,7 @@ export function AppHeader({
         <nav aria-label="Breadcrumb" className={styles["breadcrumbs"]} data-breadcrumbs="">
           <ol>
             {breadcrumbs.map((breadcrumb, index) => {
-              const current = index === breadcrumbs.length - 1;
-              const className = index === 0 ? styles["wordmark"] : styles["crumb"];
+              const Crumb = breadcrumb.href === undefined ? "span" : "a";
               return (
                 <li
                   className={breadcrumb.truncate === true ? styles["truncate"] : undefined}
@@ -81,27 +80,16 @@ export function AppHeader({
                       /
                     </span>
                   )}
-                  {breadcrumb.href === undefined ? (
-                    <span
-                      aria-current={current ? "page" : undefined}
-                      className={className}
-                      data-breadcrumb=""
-                      title={breadcrumb.truncate === true ? breadcrumb.label : undefined}
-                    >
-                      {breadcrumb.label}
-                    </span>
-                  ) : (
-                    <a
-                      aria-current={current ? "page" : undefined}
-                      aria-label={index === 0 ? "Inkling home" : undefined}
-                      className={className}
-                      data-breadcrumb=""
-                      href={breadcrumb.href}
-                      title={breadcrumb.truncate === true ? breadcrumb.label : undefined}
-                    >
-                      {breadcrumb.label}
-                    </a>
-                  )}
+                  <Crumb
+                    aria-current={index === breadcrumbs.length - 1 ? "page" : undefined}
+                    aria-label={index === 0 && Crumb === "a" ? "Inkling home" : undefined}
+                    className={index === 0 ? styles["wordmark"] : styles["crumb"]}
+                    data-breadcrumb=""
+                    href={breadcrumb.href}
+                    title={breadcrumb.truncate === true ? breadcrumb.label : undefined}
+                  >
+                    {breadcrumb.label}
+                  </Crumb>
                 </li>
               );
             })}

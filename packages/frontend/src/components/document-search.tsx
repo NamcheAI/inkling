@@ -15,17 +15,13 @@ interface SearchCompletion {
   readonly token: string;
 }
 
-const operatorCompletions: readonly SearchCompletion[] = [
-  { complete: false, description: "Filter by label", token: "label:" },
-  { complete: false, description: "Filter by lifecycle state", token: "state:" },
-  { complete: false, description: "Find an author or email", token: "author:" },
-  { complete: false, description: "Jump to an RFC number", token: "rfc:" },
-  { complete: false, description: "RFCs, notes, or publications", token: "is:" },
-  {
-    complete: false,
-    description: "Public, private, or confidential documents",
-    token: "visibility:",
-  },
+const operators: readonly { readonly description: string; readonly token: string }[] = [
+  { description: "Filter by label", token: "label:" },
+  { description: "Filter by lifecycle state", token: "state:" },
+  { description: "Find an author or email", token: "author:" },
+  { description: "Jump to an RFC number", token: "rfc:" },
+  { description: "RFCs, notes, or publications", token: "is:" },
+  { description: "Public, private, or confidential documents", token: "visibility:" },
 ];
 
 export interface DocumentSearchProps {
@@ -215,13 +211,12 @@ function searchCompletions(query: string, catalog: CatalogResponse): readonly Se
   const separator = candidate.indexOf(":");
   if (separator === -1) {
     const prefix = candidate.toLowerCase();
-    return operatorCompletions
-      .filter((completion) => completion.token.startsWith(prefix))
-      .slice(0, 6)
-      .map((completion) => ({
-        complete: completion.complete,
-        description: completion.description,
-        token: `${negated ? "-" : ""}${completion.token}`,
+    return operators
+      .filter((operator) => operator.token.startsWith(prefix))
+      .map((operator) => ({
+        complete: false,
+        description: operator.description,
+        token: `${negated ? "-" : ""}${operator.token}`,
       }));
   }
 
