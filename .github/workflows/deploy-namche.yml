@@ -1,0 +1,124 @@
+name: deploy-namche
+
+# Releases rfc.namche.ai after CI passes on main, following the estate's
+# Worker pattern (NamcheAI/machermo): PR code never receives a deploy
+# credential, the build runs without one, and only a successful, still-current
+# main SHA reaches the protected production environment. The Cloudflare token
+# is minted by NamcheAI/infra foundation/ (inkling-worker-deploy).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+concurrency:
+  group: deploy-namche-production
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  build:
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion == 'success' &&
+      vars.DEPLOYS_ENABLED == '1'
+    runs-on: [self-hosted, linux, x64, namche]
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Build Elanor from its submodule
+        run: |
+          git -c url."https://github.com/".insteadOf="git@github.com:" \
+            submodule update --init --depth 1 vendor/elanor-src
+          node scripts/build-elanor.mjs
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck the deployment entry
+        working-directory: packages/runtime-cloudflare
+        run: pnpm exec tsc -p ../../deploy/namche/tsconfig.json
+      - run: pnpm --filter @earendil-works/inkling-frontend build
+      - name: Bundle the Worker without credentials
+        working-directory: packages/runtime-cloudflare
+        run: pnpm exec wrangler deploy --dry-run -c ../../deploy/namche/wrangler.jsonc --outdir ../../deploy/namche/dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: namche-release
+          path: |
+            deploy/namche/dist
+            packages/frontend/dist
+          if-no-files-found: error
+          retention-days: 3
+
+  deploy:
+    needs: build
+    runs-on: [self-hosted, linux, x64, namche]
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      # Only the pinned Wrangler CLI; lifecycle scripts never run in this
+      # credentialed job.
+      - name: Install deploy tooling
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter @earendil-works/inkling-runtime-cloudflare
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: namche-release
+      - name: Verify SHA is current main HEAD
+        id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          CURRENT=$(gh api "repos/${REPO}/branches/main" --jq '.commit.sha')
+          if [ "$CURRENT" = "$HEAD_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Superseded: main is at ${CURRENT}, this run built ${HEAD_SHA}. Skipping release."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+      # Runtime secrets (Google OAuth, state secret) stay in Cloudflare and are
+      # neither copied into GitHub nor exposed here.
+      - name: Release to production
+        if: steps.fresh.outputs.current == 'true'
+        working-directory: packages/runtime-cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is empty; refusing to report a deploy."
+            exit 1
+          fi
+          pnpm exec wrangler deploy ../../deploy/namche/dist/worker.js --no-bundle \
+            -c ../../deploy/namche/wrangler.jsonc --message "main ${HEAD_SHA}"
+      - name: Smoke test production
+        if: steps.fresh.outputs.current == 'true'
+        run: |
+          set -euo pipefail
+          status=$(curl --silent --show-error --output /dev/null \
+            --retry 5 --retry-delay 2 --write-out '%{http_code}' https://rfc.namche.ai/)
+          test "$status" = "200"
+          curl --silent --show-error --fail https://rfc.namche.ai/theme.json | grep -q '"name":"namche"'

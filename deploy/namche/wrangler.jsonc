@@ -1,0 +1,46 @@
+// rfc.namche.ai. NamcheAI/infra apps/ owns its DNS record and Worker route, so
+// the deploy token needs no zone permission; runtime secrets are set once with
+// `wrangler secret put` and stay in Cloudflare.
+{
+  "$schema": "../../packages/runtime-cloudflare/node_modules/wrangler/config-schema.json",
+  "name": "inkling",
+  "account_id": "0aea36f0c41edaf7047edf9e34b2e630",
+  "main": "worker.ts",
+  "compatibility_date": "2026-03-27",
+  "workers_dev": false,
+  "preview_urls": false,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "INKLING_WORKSPACE",
+        "class_name": "WorkspaceDurableObject",
+      },
+      {
+        "name": "INKLING_DOCUMENTS",
+        "class_name": "DocumentDurableObject",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["WorkspaceDurableObject"],
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["DocumentDurableObject"],
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "INKLING_OBJECTS",
+      "bucket_name": "namche-inkling-objects",
+    },
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "../../packages/frontend/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/*"],
+  },
+}

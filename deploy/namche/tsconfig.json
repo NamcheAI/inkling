@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "WebWorker"],
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "typeRoots": ["../../packages/runtime-cloudflare/node_modules/@cloudflare"],
+    "types": ["workers-types"]
+  },
+  "include": ["worker.ts"]
+}
