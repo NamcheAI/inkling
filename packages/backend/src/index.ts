@@ -100,7 +100,13 @@ export {
 } from "./mcp/server.ts";
 export type { McpDispatch, McpOptions } from "./mcp/server.ts";
 export { isOAuthPath, mcpResourceMetadataUrl } from "./mcp/paths.ts";
-export { DigestLive, IdGeneratorLive, SecretHasherLive, SecureTokenLive } from "./crypto.ts";
+export {
+  DigestLive,
+  IdGeneratorLive,
+  SecretHasherLive,
+  SecureTokenLive,
+  secretHasherLayer,
+} from "./crypto.ts";
 export {
   finishGoogleAuthentication,
   isGoogleEmailAllowed,

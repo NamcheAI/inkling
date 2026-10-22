@@ -18,7 +18,7 @@ import type {
 import { decodeBase64, encodeBase64 } from "@earendil-works/inkling-collaboration";
 
 const textEncoder = new TextEncoder();
-const pbkdf2Iterations = 310_000;
+const defaultPbkdf2Iterations = 310_000;
 
 export const DigestLive = Layer.succeed(Digest, {
   sha256: (bytes) =>
@@ -42,9 +42,19 @@ export const IdGeneratorLive = Layer.succeed(IdGenerator, {
     ),
 } satisfies IdGeneratorService);
 
-export const SecretHasherLive = Layer.succeed(SecretHasher, makeSecretHasher());
+export const SecretHasherLive = Layer.succeed(
+  SecretHasher,
+  makeSecretHasher(defaultPbkdf2Iterations),
+);
 
-function makeSecretHasher(): SecretHasherService {
+/** A secret hasher for runtimes that cap PBKDF2: Cloudflare Workers reject more
+ * than 100,000 iterations. Hashes record their iteration count, so either
+ * setting verifies the other's hashes where the platform can compute them. */
+export function secretHasherLayer(iterations: number): Layer.Layer<SecretHasherService> {
+  return Layer.succeed(SecretHasher, makeSecretHasher(iterations));
+}
+
+function makeSecretHasher(pbkdf2Iterations: number): SecretHasherService {
   return {
     hash: (secret) =>
       Effect.gen(function* () {
