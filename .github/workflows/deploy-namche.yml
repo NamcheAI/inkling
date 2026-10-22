@@ -5,6 +5,8 @@ name: deploy-namche
 # credential, the build runs without one, and only a successful, still-current
 # main SHA reaches the protected production environment. The Cloudflare token
 # is minted by NamcheAI/infra foundation/ (inkling-worker-deploy).
+# GitHub-hosted runners: this fork is public, and the estate's self-hosted
+# runners must never pick up jobs from a public repository.
 on:
   workflow_run:
     workflows: [CI]
@@ -24,7 +26,7 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.conclusion == 'success' &&
       vars.DEPLOYS_ENABLED == '1'
-    runs-on: [self-hosted, linux, x64, namche]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
@@ -62,7 +64,7 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: [self-hosted, linux, x64, namche]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
     permissions:
