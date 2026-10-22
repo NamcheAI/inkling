@@ -114,7 +114,10 @@ jobs:
             echo "::error::CLOUDFLARE_API_TOKEN is empty; refusing to report a deploy."
             exit 1
           fi
-          pnpm exec wrangler deploy ../../deploy/namche/dist/worker.js --no-bundle \
+          # --no-x-provision: Wrangler would otherwise look up (and could create)
+          # every bound resource, which needs R2 and other permissions this
+          # token deliberately lacks. Resources are created once by an operator.
+          pnpm exec wrangler deploy ../../deploy/namche/dist/worker.js --no-bundle --no-x-provision \
             -c ../../deploy/namche/wrangler.jsonc --message "main ${HEAD_SHA}"
       - name: Smoke test production
         if: steps.fresh.outputs.current == 'true'
