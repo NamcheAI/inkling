@@ -2,6 +2,24 @@
   "$schema": "../theme.schema.json",
   "schemaVersion": 1,
   "name": "namche",
+  "brand": {
+    "logo": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0NDAgODMuNDAxNSIgd2lkdGg9IjQ0MCIgaGVpZ2h0PSI4My40MDE1IiBmaWxsPSIjMTExMTExIj48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTM4Ny4xNzIgODEuNjAyOFYxLjc5ODE0SDQzOS4xMDFWMTIuOTI1OEg0MDguMzAzQzQwMi40NTggMTIuOTI1OCAzOTkuMzExIDE2LjA3MzEgMzk5LjMxMSAyMS45MTc5VjI3LjIwMDhDMzk5LjMxMSAzMy4wNDU2IDQwMi40NTggMzYuMTkyOCA0MDguMzAzIDM2LjE5MjhINDM3Ljc1MlY0Ni45ODMzSDQwOC4zMDNDNDAyLjQ1OCA0Ni45ODMzIDM5OS4zMTEgNTAuMTMwNSAzOTkuMzExIDU1Ljk3NTRWNjEuNDgzQzM5OS4zMTEgNjcuMzI3OSA0MDIuNDU4IDcwLjQ3NTEgNDA4LjMwMyA3MC40NzUxSDQ0MFY4MS42MDI4SDM4Ny4xNzJaIi8+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0zMTYuMTE2IDgxLjYwMjhWMS43OTgxNEgzMjguMjU1VjI2Ljk3NkMzMjguMjU1IDMyLjgyMDggMzMxLjQwMyAzNS45NjggMzM3LjI0NyAzNS45NjhIMzU2LjEzMUMzNjEuOTc2IDM1Ljk2OCAzNjUuMTIzIDMyLjgyMDggMzY1LjEyMyAyNi45NzZWMS43OTgxNEgzNzcuMjYyVjgxLjYwMjhIMzY1LjEyM1Y1NS45NzU0QzM2NS4xMjMgNTAuMTMwNSAzNjEuOTc2IDQ2Ljk4MzMgMzU2LjEzMSA0Ni45ODMzSDMzNy4yNDdDMzMxLjQwMyA0Ni45ODMzIDMyOC4yNTUgNTAuMTMwNSAzMjguMjU1IDU1Ljk3NTRWODEuNjAyOEgzMTYuMTE2WiIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNMjczLjgyNCA4My40MDE1QzI1Mi4yNDMgODMuNDAxNSAyMzcuNDA2IDY3Ljc3NzggMjM3LjQwNiA0MS44MTMyQzIzNy40MDYgMTYuMDczMyAyNTIuMDE5IDAgMjczLjkzNyAwQzI5My43MTkgMCAzMDQuMjg1IDEwLjU2NTcgMzA3LjY1NyAyNy45ODc4TDI5NC45NTYgMjguNjYyMkMyOTIuODIgMTcuNzU5MyAyODYuMDc2IDExLjEyNzcgMjczLjkzNyAxMS4xMjc3QzI1OS40MzcgMTEuMTI3NyAyNDkuOTk1IDIyLjgxNzQgMjQ5Ljk5NSA0MS44MTMyQzI0OS45OTUgNjAuOTIxMyAyNTkuNTQ5IDcyLjI3MzggMjczLjgyNCA3Mi4yNzM4QzI4Ni43NSA3Mi4yNzM4IDI5My42MDcgNjQuOTY3NyAyOTUuNTE4IDUzLjA1MzJMMzA4LjIxOSA1My43Mjc2QzMwNS4xODQgNzEuODI0MiAyOTMuNDk1IDgzLjQwMTUgMjczLjgyNCA4My40MDE1WiIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNMTQ4LjE5MiA4MS42MDI4VjEuNzk4MTRIMTY0LjgyOEwxODUuNjIyIDU5LjIzNUMxODcuMDgzIDYzLjI4MTUgMTkwLjAwNSA2My4yODE1IDE5MS40NjcgNTkuMjM1TDIxMi4yNjEgMS43OTgxNEgyMjguODk2VjgxLjYwMjhIMjE2Ljc1N1YzNy45OTEyQzIxNi43NTcgMzMuNzIgMjEzLjA0OCAzMy4wNDU2IDIxMS41ODYgMzcuMDkyTDE5NS4yODggODEuNDkwNEgxODEuOEwxNjUuNTAyIDM3LjA5MkMxNjQuMDQxIDMzLjA0NTYgMTYwLjMzMiAzMy43MiAxNjAuMzMyIDM3Ljk5MTJWODEuNjAyOEgxNDguMTkyWiIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNNjkuNjE2IDgxLjYwMzRMOTguMzkwNiAxLjc5ODcySDExMy43OUwxNDIuNTY0IDgxLjYwMzRIMTI5LjYzOEwxMjQuMjQzIDY2LjIwNDVDMTIzLjAwNiA2Mi40OTUyIDEyMC41MzQgNjAuODA5MiAxMTYuNiA2MC44MDkySDk1LjQ2ODJDOTEuNTM0MSA2MC44MDkyIDg5LjA2MTMgNjIuNjA3NiA4Ny44MjQ5IDY2LjMxNjlMODIuNTQyMSA4MS42MDM0SDY5LjYxNlpNOTYuMTQyNiA0Mi4wMzgzQzk0LjU2OSA0Ni42NDY3IDk2LjcwNDYgNDkuNzkzOSAxMDEuNjUgNDkuNzkzOUgxMTAuNDE3QzExNS4zNjMgNDkuNzkzOSAxMTcuNDk5IDQ2Ljc1OTEgMTE1LjkyNSA0Mi4wMzgzTDExMC40MTcgMjYuMDc3M0MxMDguMzk0IDIwLjEyMDEgMTAzLjY3MyAyMC4xMjAxIDEwMS42NSAyNi4wNzczTDk2LjE0MjYgNDIuMDM4M1oiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZD0iTTAgODEuNjAzNFYxLjc5ODcySDE1LjM5ODlMNDYuODcxMiA1Ny4zMjQ4QzQ5LjAwNjggNjEuMTQ2NCA1Mi4yNjY0IDYwLjM1OTYgNTIuMjY2NCA1NS44NjM2VjEuNzk4NzJINjQuNDA1N1Y4MS42MDM0SDQ4LjQ0NDhMMTcuNTM0NSAyNy40MjYxQzE1LjI4NjUgMjMuNjA0NSAxMi4xMzkzIDI0LjUwMzcgMTIuMTM5MyAyOC44ODc0VjgxLjYwMzRIMFoiLz48L3N2Zz4K",
+    "logoAspectRatio": 5.275684490087109
+  },
+  "shape": {
+    "borderWidth": {
+      "small": "0.5px",
+      "default": "0.5px",
+      "medium": "1px",
+      "large": "2px"
+    },
+    "radius": {
+      "small": "0.75rem",
+      "medium": "1rem",
+      "large": "1rem"
+    },
+    "shadows": false
+  },
   "fonts": {
     "imports": [
       "https://cdn.namche.ai/fonts/namche-shadow/v0.6.0/sans.css",
@@ -9,8 +27,13 @@
     ],
     "prose": "\"Namche Shadow Sans\", -apple-system, BlinkMacSystemFont, \"Segoe UI Variable Text\", \"Segoe UI\", Roboto, Cantarell, \"Inter\", \"Helvetica Neue\", Helvetica, Arial, sans-serif",
     "heading": "\"Namche Shadow Sans\", -apple-system, BlinkMacSystemFont, \"Segoe UI Variable Text\", \"Segoe UI\", Roboto, Cantarell, \"Inter\", \"Helvetica Neue\", Helvetica, Arial, sans-serif",
-    "ui": "\"Namche Shadow Mono\", ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, Consolas, \"Liberation Mono\", monospace",
-    "code": "\"Namche Shadow Mono\", ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, Consolas, \"Liberation Mono\", monospace"
+    "ui": "\"Namche Shadow Sans\", -apple-system, BlinkMacSystemFont, \"Segoe UI Variable Text\", \"Segoe UI\", Roboto, Cantarell, \"Inter\", \"Helvetica Neue\", Helvetica, Arial, sans-serif",
+    "code": "\"Namche Shadow Mono\", ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, Consolas, \"Liberation Mono\", monospace",
+    "weights": {
+      "normal": 500,
+      "semiBold": 500,
+      "bold": 700
+    }
   },
   "light": {
     "page": "oklch(95.17% 0.0096 93.57)",
