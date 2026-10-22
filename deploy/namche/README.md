@@ -9,7 +9,7 @@ variable limit) and released by `.github/workflows/deploy-namche.yml`.
   Never edit it here; update it with `deploy/namche/sync-theme.sh <version>`.
 - **Infrastructure.** NamcheAI/infra owns the deploy token (`foundation/`,
   `inkling-worker-deploy`) and the DNS record and route (`apps/inkling.tf`).
-- **Once, by an operator.** The R2 bucket `namche-inkling-objects`, the Worker
+- **Once, by an operator.** The EU-jurisdiction R2 bucket `inkling-objects`, the Worker
   secrets (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
   `GOOGLE_ALLOWED_DOMAINS=namche.ai`, `GOOGLE_ADMIN_EMAILS`,
   `INKLING_OAUTH_STATE_SECRET`), and the repository variable

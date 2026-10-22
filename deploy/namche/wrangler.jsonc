@@ -34,7 +34,8 @@
   "r2_buckets": [
     {
       "binding": "INKLING_OBJECTS",
-      "bucket_name": "namche-inkling-objects",
+      "bucket_name": "inkling-objects",
+      "jurisdiction": "eu",
     },
   ],
   "assets": {
