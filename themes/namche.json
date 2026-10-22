@@ -155,8 +155,8 @@
     "danger": "oklch(70.39% 0.1002 11.95)",
     "scrim": "oklch(26.86% 0.0000 0.00 / 65%)",
     "selection": {
-      "background": "oklch(41.78% 0.0966 58.98)",
-      "text": "oklch(95.17% 0.0096 93.57)"
+      "background": "oklch(86.51% 0.0858 69.14)",
+      "text": "oklch(26.86% 0.0000 0.00)"
     },
     "participantText": "oklch(17.76% 0.0000 0.00)",
     "presence": {
