@@ -33,7 +33,6 @@ import {
   makeSqlSearchIndex,
   mcpEndpointPath,
   rfcRedirectLocation,
-  SecretHasherLive,
   SecureTokenLive,
   shareProofCookieNameFromToken,
   startGoogleAuthentication,
@@ -64,6 +63,7 @@ import type {
 } from "@earendil-works/inkling-protocol";
 import { MarkdownRendererLive } from "@earendil-works/inkling-renderer";
 
+import { CloudflareSecretHasherLive } from "./crypto.ts";
 import {
   defaultEmbeddingModel,
   makeDurableObjectSearchDatabase,
@@ -1097,7 +1097,7 @@ function createApplicationRuntime(
     storage,
     DigestLive,
     SecureTokenLive,
-    SecretHasherLive,
+    CloudflareSecretHasherLive,
     IdGeneratorLive,
     MarkdownRendererLive,
   );
