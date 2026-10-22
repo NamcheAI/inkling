@@ -30,7 +30,7 @@ import {
   localApplicationLayer,
   mcpEndpointPath,
   rfcRedirectLocation,
-  SecretHasherLive,
+  secretHasherLayer,
   SecureTokenLive,
   shareProofCookieNameFromToken,
   startGoogleAuthentication,
@@ -1060,7 +1060,9 @@ function createApplicationRuntime(
     storage,
     DigestLive,
     SecureTokenLive,
-    SecretHasherLive,
+    // Workers reject PBKDF2 above 100,000 iterations (workerd in development does
+    // not), so sessions and API keys are hashed at that cap here.
+    secretHasherLayer(100_000),
     IdGeneratorLive,
     MarkdownRendererLive,
   );
