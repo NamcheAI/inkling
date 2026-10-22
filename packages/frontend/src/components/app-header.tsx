@@ -88,6 +88,12 @@ export function AppHeader({
                     href={breadcrumb.href}
                     title={breadcrumb.truncate === true ? breadcrumb.label : undefined}
                   >
+                    {index === 0 ? (
+                      <>
+                        <span aria-hidden="true" className={styles["brandLogo"]} />
+                        <span aria-hidden="true" className={styles["brandSeparator"]} />
+                      </>
+                    ) : null}
                     {breadcrumb.label}
                   </Crumb>
                 </li>

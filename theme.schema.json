@@ -11,9 +11,69 @@
     "name": { "type": "string", "minLength": 1, "maxLength": 100 },
     "fonts": { "$ref": "#/$defs/fonts" },
     "light": { "$ref": "#/$defs/mode" },
-    "dark": { "$ref": "#/$defs/mode" }
+    "dark": { "$ref": "#/$defs/mode" },
+    "shape": { "$ref": "#/$defs/shape" },
+    "brand": { "$ref": "#/$defs/brand" }
   },
   "$defs": {
+    "length": {
+      "type": "string",
+      "description": "A CSS length in px or rem.",
+      "pattern": "^(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:px|rem)$"
+    },
+    "weight": { "type": "integer", "minimum": 100, "maximum": 900 },
+    "shape": {
+      "type": "object",
+      "description": "Optional overrides of Elanor's border widths, radii, and shadows. Anything left out keeps Elanor's value.",
+      "additionalProperties": false,
+      "properties": {
+        "borderWidth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "small": { "$ref": "#/$defs/length", "description": "Separators and rules." },
+            "medium": {
+              "$ref": "#/$defs/length",
+              "description": "Focus offsets and accent rules."
+            },
+            "large": { "$ref": "#/$defs/length", "description": "Focus rings." },
+            "default": { "$ref": "#/$defs/length", "description": "Control and card outlines." }
+          }
+        },
+        "radius": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "small": {
+              "$ref": "#/$defs/length",
+              "description": "Buttons, fields, chips, menus, and popups."
+            },
+            "medium": { "$ref": "#/$defs/length", "description": "Dialogs." },
+            "large": { "$ref": "#/$defs/length" }
+          }
+        },
+        "shadows": { "type": "boolean", "description": "False removes popup and sticky shadows." }
+      }
+    },
+    "brand": {
+      "type": "object",
+      "description": "Optional logo shown before the product name, drawn in the text color.",
+      "additionalProperties": false,
+      "required": ["logo", "logoAspectRatio"],
+      "properties": {
+        "logo": {
+          "type": "string",
+          "description": "A base64 SVG data URI; its shape is used as a mask.",
+          "maxLength": 32000,
+          "pattern": "^data:image/svg\\+xml;base64,[A-Za-z0-9+/]+={0,2}$"
+        },
+        "logoAspectRatio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Width divided by height."
+        }
+      }
+    },
     "color": {
       "type": "string",
       "description": "An OKLCH CSS color, optionally with alpha.",
@@ -35,7 +95,17 @@
         "prose": { "type": "string", "minLength": 1 },
         "heading": { "type": "string", "minLength": 1 },
         "ui": { "type": "string", "minLength": 1 },
-        "code": { "type": "string", "minLength": 1 }
+        "code": { "type": "string", "minLength": 1 },
+        "weights": {
+          "type": "object",
+          "description": "Optional overrides of Elanor's three weights: running text, app headings, and labels or emphasis.",
+          "additionalProperties": false,
+          "properties": {
+            "normal": { "$ref": "#/$defs/weight" },
+            "semiBold": { "$ref": "#/$defs/weight" },
+            "bold": { "$ref": "#/$defs/weight" }
+          }
+        }
       }
     },
     "state": {

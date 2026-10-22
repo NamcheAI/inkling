@@ -568,3 +568,24 @@ button:focus-visible {
 .oauth-actions button[value="allow"]:hover {
   background: var(--semantic-color-background-fill-primary-hover);
 }
+
+/* Shown only when the theme supplies a logo: "LOGO – INKLING". */
+.public-masthead .public-brand-logo,
+.public-masthead .public-brand-separator {
+  display: var(--brand-logo-display, none);
+  color: inherit;
+  font: inherit;
+}
+
+.public-masthead .public-brand-logo {
+  height: 0.8em;
+  aspect-ratio: var(--brand-logo-aspect-ratio, 1);
+  background: currentColor;
+  mask: var(--brand-logo) center / contain no-repeat;
+  vertical-align: -0.05em;
+}
+
+.public-masthead .public-brand-separator::before {
+  margin: 0 0.45em;
+  content: "–";
+}

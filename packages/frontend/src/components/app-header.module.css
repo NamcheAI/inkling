@@ -184,3 +184,22 @@ a.crumb:hover {
     max-inline-size: 8.5rem;
   }
 }
+
+/* Shown only when the theme supplies a logo: "LOGO – Inkling". */
+.brandLogo,
+.brandSeparator {
+  display: var(--brand-logo-display, none);
+}
+
+.brandLogo {
+  height: 0.8em;
+  aspect-ratio: var(--brand-logo-aspect-ratio, 1);
+  background: currentColor;
+  mask: var(--brand-logo) center / contain no-repeat;
+  vertical-align: -0.05em;
+}
+
+.brandSeparator::before {
+  margin: 0 0.45em;
+  content: "–";
+}

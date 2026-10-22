@@ -99,8 +99,44 @@ const ThemeModeSchema = Schema.Struct({
   }),
 });
 
+const CssLength = Schema.String.pipe(Schema.pattern(/^(?:\d+(?:\.\d+)?|\.\d+)(?:px|rem)$/u));
+const FontWeight = Schema.Number.pipe(Schema.int(), Schema.between(100, 900));
+// The logo is drawn as a CSS mask in the text color, so only inline SVG is accepted:
+// a remote mask image would need CORS and could change after the theme is reviewed.
+const LogoSource = Schema.String.pipe(
+  Schema.maxLength(32_000),
+  Schema.pattern(/^data:image\/svg\+xml;base64,[A-Za-z\d+/]+={0,2}$/u),
+);
+
+// Overrides of Elanor's mode-independent semantic tokens. Every field is
+// optional; Elanor's brand value applies to anything left out.
+const ShapeSchema = Schema.Struct({
+  borderWidth: Schema.optional(
+    Schema.Struct({
+      default: Schema.optional(CssLength),
+      large: Schema.optional(CssLength),
+      medium: Schema.optional(CssLength),
+      small: Schema.optional(CssLength),
+    }),
+  ),
+  radius: Schema.optional(
+    Schema.Struct({
+      large: Schema.optional(CssLength),
+      medium: Schema.optional(CssLength),
+      small: Schema.optional(CssLength),
+    }),
+  ),
+  shadows: Schema.optional(Schema.Boolean),
+});
+
+const BrandSchema = Schema.Struct({
+  logo: LogoSource,
+  logoAspectRatio: Schema.Number.pipe(Schema.positive()),
+});
+
 export const ThemeConfigurationSchema = Schema.Struct({
   $schema: Schema.optional(Schema.String),
+  brand: Schema.optional(BrandSchema),
   dark: ThemeModeSchema,
   fonts: Schema.Struct({
     code: FontFamily,
@@ -108,10 +144,18 @@ export const ThemeConfigurationSchema = Schema.Struct({
     imports: Schema.Array(FontImport).pipe(Schema.maxItems(8)),
     prose: FontFamily,
     ui: FontFamily,
+    weights: Schema.optional(
+      Schema.Struct({
+        bold: Schema.optional(FontWeight),
+        normal: Schema.optional(FontWeight),
+        semiBold: Schema.optional(FontWeight),
+      }),
+    ),
   }),
   light: ThemeModeSchema,
   name: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(100)),
   schemaVersion: Schema.Literal(1),
+  shape: Schema.optional(ShapeSchema),
 });
 
 export type ThemeConfiguration = typeof ThemeConfigurationSchema.Type;
@@ -559,10 +603,37 @@ export function themeStylesheet(theme: ThemeConfiguration | undefined): string {
     `  --semantic-font-family-ui: ${theme.fonts.ui};`,
     `  --semantic-font-family-code: ${theme.fonts.code};`,
     `  --heading-font: ${theme.fonts.heading};`,
+    ...shapeVariables(theme),
   ].join("\n");
   const light = modeVariables(theme.light);
   const dark = modeVariables(theme.dark);
   return `${imports}${imports === "" ? "" : "\n\n"}:root {\n  color-scheme: light;\n${fonts}\n${light}\n}\n\n:root[data-color-scheme="dark"] {\n  color-scheme: dark;\n${dark}\n}\n\n@media (prefers-color-scheme: dark) {\n  :root:not([data-color-scheme]) {\n    color-scheme: dark;\n${dark}\n  }\n}\n`;
+}
+
+function shapeVariables(theme: ThemeConfiguration): readonly string[] {
+  const { borderWidth, radius, shadows } = theme.shape ?? {};
+  const weights = theme.fonts.weights;
+  const values: Readonly<Record<string, string | number | undefined>> = {
+    "--semantic-dimension-border-width-small": borderWidth?.small,
+    "--semantic-dimension-border-width-medium": borderWidth?.medium,
+    "--semantic-dimension-border-width-large": borderWidth?.large,
+    "--semantic-dimension-border-width-default": borderWidth?.default,
+    "--semantic-dimension-radius-small": radius?.small,
+    "--semantic-dimension-radius-medium": radius?.medium,
+    "--semantic-dimension-radius-large": radius?.large,
+    "--semantic-shadow-popup": shadows === false ? "none" : undefined,
+    "--semantic-shadow-sticky": shadows === false ? "none" : undefined,
+    // Elanor's typography roles alias these three weights directly.
+    "--primitive-font-weight-normal": weights?.normal,
+    "--primitive-font-weight-semi-bold": weights?.semiBold,
+    "--primitive-font-weight-bold": weights?.bold,
+    "--brand-logo": theme.brand === undefined ? undefined : `url("${theme.brand.logo}")`,
+    "--brand-logo-aspect-ratio": theme.brand?.logoAspectRatio,
+    "--brand-logo-display": theme.brand === undefined ? undefined : "inline-block",
+  };
+  return Object.entries(values).flatMap(([name, value]) =>
+    value === undefined ? [] : [`  ${name}: ${value};`],
+  );
 }
 
 // Public pages allow stylesheets and fonts only from the theme's font imports;

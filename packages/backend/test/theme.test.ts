@@ -127,3 +127,39 @@ test("theme JSON rejects font imports without a plain host", async () => {
 
   assert.equal(Either.isLeft(result), true);
 });
+
+test("shape, weight, and brand overrides appear only when a theme sets them", () => {
+  const logo = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg"/>')}`;
+  const shaped = {
+    ...inklingTheme,
+    brand: { logo, logoAspectRatio: 5.25 },
+    fonts: { ...inklingTheme.fonts, weights: { semiBold: 500 } },
+    shape: { borderWidth: { default: "0.5px" }, radius: { small: "0.75rem" }, shadows: false },
+  };
+  const stylesheet = themeStylesheet(shaped);
+
+  assert.match(stylesheet, /--semantic-dimension-border-width-default: 0\.5px;/u);
+  assert.match(stylesheet, /--semantic-dimension-radius-small: 0\.75rem;/u);
+  assert.match(stylesheet, /--semantic-shadow-popup: none;/u);
+  assert.match(stylesheet, /--primitive-font-weight-semi-bold: 500;/u);
+  assert.ok(stylesheet.includes(`--brand-logo: url("${logo}");`));
+  assert.doesNotMatch(stylesheet, /--semantic-dimension-border-width-small|radius-medium/u);
+  assert.doesNotMatch(
+    themeStylesheet(inklingTheme),
+    /--semantic-dimension-|--semantic-shadow-|--primitive-font-weight-|--brand-/u,
+  );
+});
+
+test("theme JSON rejects remote logos and lengths outside px and rem", async () => {
+  const results = await Promise.all(
+    [
+      { ...inklingTheme, brand: { logo: "https://example.com/logo.svg", logoAspectRatio: 2 } },
+      { ...inklingTheme, shape: { radius: { small: "1px;color:red" } } },
+    ].map((theme) => Effect.runPromise(Effect.either(decodeThemeJson(JSON.stringify(theme))))),
+  );
+
+  assert.deepEqual(
+    results.map((result) => Either.isLeft(result)),
+    [true, true],
+  );
+});
