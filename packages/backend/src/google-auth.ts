@@ -166,7 +166,13 @@ export async function finishGoogleAuthentication(
         ? tokenBody["access_token"]
         : undefined;
     if (!tokenResponse.ok || idToken === undefined) {
-      return oauthFailure("Google rejected the authorization code.");
+      return oauthFailure("Google rejected the authorization code.", {
+        status: tokenResponse.status,
+        googleError:
+          Predicate.isReadonlyRecord(tokenBody) && typeof tokenBody["error"] === "string"
+            ? tokenBody["error"]
+            : undefined,
+      });
     }
     const claims = await verifyGoogleIdentityToken(
       idToken,
@@ -238,8 +244,10 @@ export async function finishGoogleAuthentication(
       }),
     );
     return new Response(null, { headers, status: 302 });
-  } catch {
-    return oauthFailure("Google authentication could not be completed.");
+  } catch (error) {
+    return oauthFailure("Google authentication could not be completed.", {
+      reason: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -512,7 +520,12 @@ function oauthUnavailable(): Response {
   );
 }
 
-function oauthFailure(message: string): Response {
+// Logs why sign-in failed for operators: Google's error code or the failure
+// message, never tokens or the authorization code.
+function oauthFailure(message: string, detail?: Readonly<Record<string, unknown>>): Response {
+  if (detail !== undefined) {
+    console.error(JSON.stringify({ event: "oauth_failed", message, ...detail }));
+  }
   return Response.json(
     { code: "oauth_failed", message, retryable: false },
     { headers: { "Cache-Control": "no-store" }, status: 401 },
