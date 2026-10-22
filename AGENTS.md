@@ -21,6 +21,7 @@ All domain, application, and runtime logic is built on the JavaScript `effect` e
 - `frontend`: browser application; CodeMirror owns text editing; Elanor owns UI components.
 - `runtime-node`: Node HTTP, WebSocket, filesystem, locking, and journal adapters.
 - `runtime-cloudflare`: Worker, Durable Object, alarm, and R2 adapters.
+- `deployments/*`: concrete deployments shaped like `templates/cloudflare`; configuration only, no application code.
 
 Dependencies point inward. Shared packages must remain browser-, Node-, and Worker-portable. Runtime differences belong in adapters, not conditionals spread through shared code. Avoid generic `utils` packages and deep imports into another package's internals.
 

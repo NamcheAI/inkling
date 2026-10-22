@@ -27,6 +27,25 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  deployments/earendil-rfc:
+    dependencies:
+      '@earendil-works/inkling-frontend':
+        specifier: workspace:*
+        version: link:../../packages/frontend
+      '@earendil-works/inkling-runtime-cloudflare':
+        specifier: workspace:*
+        version: link:../../packages/runtime-cloudflare
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 5.20260804.1
+        version: 5.20260804.1
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      wrangler:
+        specifier: 4.118.0
+        version: 4.118.0(@cloudflare/workers-types@5.20260804.1)
+
   packages/backend:
     dependencies:
       '@earendil-works/inkling-collaboration':

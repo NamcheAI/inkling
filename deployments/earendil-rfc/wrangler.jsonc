@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "earendil-inkling",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-03-27",
+  // Staged on rfc-next until the cutover moves the rfc.earendil.com route to this Worker.
+  "routes": [{ "pattern": "rfc-next.earendil.com", "custom_domain": true }],
+  // Google sign-in only works on registered callback origins, so do not expose extra hostnames.
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "INKLING_WORKSPACE",
+        "class_name": "WorkspaceDurableObject",
+      },
+      {
+        "name": "INKLING_DOCUMENTS",
+        "class_name": "DocumentDurableObject",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["WorkspaceDurableObject"],
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["DocumentDurableObject"],
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "INKLING_OBJECTS",
+      "bucket_name": "earendil-inkling-objects",
+      "preview_bucket_name": "earendil-inkling-objects-preview",
+    },
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "node_modules/@earendil-works/inkling-frontend/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/*"],
+  },
+}

@@ -37,6 +37,12 @@ Follow the template's [`README.md`](templates/cloudflare/README.md) to choose Wo
 configure Google OAuth, provision the buckets, and deploy. A Git repository is recommended for
 repeatable upgrades and Cloudflare Git deployments, but Wrangler only requires the folder.
 
+Deployments maintained in this repository live under [`deployments/`](deployments). Each one has the
+template's shape but depends on the workspace packages, so it deploys the current checkout. `make
+check` builds them and verifies that their Durable Object bindings, migrations, and asset routing
+match the template and the development Worker; see
+[`deployments/earendil-rfc`](deployments/earendil-rfc/README.md) for Earendil's RFC site.
+
 ## Cloudflare development
 
 The primary development setup runs Vite on port 5173 and the Cloudflare Worker on port 8787. Copy the example OAuth configuration first:
