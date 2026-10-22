@@ -56,7 +56,7 @@ import {
 import { handleMcpRequest, mcpEndpointPath } from "./mcp/server.ts";
 import type { GoogleAuthenticationEnvironment } from "./google-auth.ts";
 import { canonicalRfcPath, rfcRedirectLocation } from "./routes.ts";
-import { publicStylesheetLinks, themeCssResponse } from "./theme.ts";
+import { publicStylesheetLinks, themeContentSecurityPolicy, themeCssResponse } from "./theme.ts";
 import type { ThemeConfiguration } from "./theme.ts";
 
 export type {
@@ -103,6 +103,7 @@ export {
   paperTheme,
   ThemeConfigurationSchema,
   ThemeError,
+  themeContentSecurityPolicy,
   themeCssResponse,
   themeStylesheet,
 } from "./theme.ts";
@@ -118,6 +119,7 @@ export interface BackendOptions {
 export function createBackendApp(options: BackendOptions = {}): Hono {
   const app = new Hono();
   const version = options.version ?? "development";
+  const contentSecurityPolicy = themeContentSecurityPolicy(options.theme);
 
   app.use("*", async (context, next) => {
     const startedAt = Date.now();
@@ -1423,6 +1425,3 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
-
-const contentSecurityPolicy =
-  "default-src 'none'; img-src 'self' https: data:; style-src 'self' https://fonts.googleapis.com; script-src 'self'; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; base-uri 'none'; frame-ancestors 'none'";

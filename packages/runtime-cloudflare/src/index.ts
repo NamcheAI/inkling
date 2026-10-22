@@ -119,7 +119,11 @@ export class WorkspaceDurableObject extends DurableObject<CloudflareEnvironment>
       ownsDocumentPrivateState: false,
       workspaceId: state.id.toString(),
     });
-    this.#app = createBackendApp({ runtime: this.#runtime, version: "cloudflare" });
+    this.#app = createBackendApp({
+      runtime: this.#runtime,
+      theme: configuredTheme(environment),
+      version: "cloudflare",
+    });
     state.blockConcurrencyWhile(() => this.#runtime.runtime().then(() => undefined));
   }
 
@@ -518,7 +522,11 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
     await runtime.runtime();
     this.#configuration = configuration;
     this.#runtime = runtime;
-    this.#app = createBackendApp({ runtime, version: "cloudflare-document" });
+    this.#app = createBackendApp({
+      runtime,
+      theme: configuredTheme(this.#environment),
+      version: "cloudflare-document",
+    });
   }
 
   #upgrade(request: Request, documentId: string): Response {
@@ -951,6 +959,13 @@ function themeFromEnvironment(
   if (isDefaultThemeSelection(selected)) return Effect.succeed(undefined);
   const bundled = findBundledTheme(selected);
   return bundled === undefined ? decodeThemeJson(selected ?? "") : Effect.succeed(bundled);
+}
+
+// An invalid theme already fails /theme.css; pages keep the default policy meanwhile.
+function configuredTheme(environment: CloudflareEnvironment): ThemeConfiguration | undefined {
+  return Effect.runSync(
+    themeFromEnvironment(environment.INKLING_THEME).pipe(Effect.orElseSucceed(() => undefined)),
+  );
 }
 
 async function flushDocumentsForBackup(

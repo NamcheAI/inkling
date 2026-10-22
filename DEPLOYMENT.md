@@ -134,7 +134,7 @@ cd packages/runtime-cloudflare
 pnpm exec wrangler secret put INKLING_THEME < ../../my-theme.json
 ```
 
-Themes must include both `light` and `dark`. Font imports must be HTTPS URLs, and all color values must use `oklch(...)`; invalid themes fail instead of injecting partial CSS.
+Themes must include both `light` and `dark`. Font imports must be HTTPS URLs, and all color values must use `oklch(...)`; invalid themes fail instead of injecting partial CSS. Public pages allow stylesheets and fonts only from the origins of the theme's font imports (plus `fonts.gstatic.com` for Google Fonts), so a font stylesheet that loads its files from another host needs that host imported too.
 
 Official references:
 

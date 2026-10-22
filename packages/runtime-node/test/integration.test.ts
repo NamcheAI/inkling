@@ -380,8 +380,9 @@ test(
         assert.equal(numericRfc.status, 308);
         assert.equal(numericRfc.headers.get("location"), "/rfc/0001");
         const publishedCsp = published.headers.get("content-security-policy") ?? "";
-        assert.match(publishedCsp, /style-src 'self' https:\/\/fonts\.googleapis\.com/u);
-        assert.match(publishedCsp, /font-src 'self' https:\/\/fonts\.gstatic\.com/u);
+        // Without a theme, stylesheets and fonts come only from this origin (Elanor's fonts).
+        assert.match(publishedCsp, /style-src 'self';/u);
+        assert.match(publishedCsp, /font-src 'self';/u);
         assert.doesNotMatch(publishedCsp, /style-src 'unsafe-inline'/u);
         const publishedHtml = await published.text();
         assert.ok(publishedHtml.indexOf("INKLING AGENT HANDOFF") < 128);

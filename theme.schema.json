@@ -27,7 +27,10 @@
         "imports": {
           "type": "array",
           "maxItems": 8,
-          "items": { "type": "string", "pattern": "^https://" }
+          "items": {
+            "type": "string",
+            "pattern": "^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[^\\s\\\\\"'(){}]*)?$"
+          }
         },
         "prose": { "type": "string", "minLength": 1 },
         "heading": { "type": "string", "minLength": 1 },
