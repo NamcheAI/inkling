@@ -80,6 +80,8 @@ const ThemeModeSchema = Schema.Struct({
     lightness: CssNumber,
   }),
   scrim: OklchColor,
+  // Text selection; without it, selections tint the background with the focus ring.
+  selection: Schema.optional(Schema.Struct({ background: OklchColor, text: OklchColor })),
   states: Schema.Struct({
     abandoned: StateColorSchema,
     accepted: StateColorSchema,
@@ -607,7 +609,13 @@ export function themeStylesheet(theme: ThemeConfiguration | undefined): string {
   ].join("\n");
   const light = modeVariables(theme.light);
   const dark = modeVariables(theme.dark);
-  return `${imports}${imports === "" ? "" : "\n\n"}:root {\n  color-scheme: light;\n${fonts}\n${light}\n}\n\n:root[data-color-scheme="dark"] {\n  color-scheme: dark;\n${dark}\n}\n\n@media (prefers-color-scheme: dark) {\n  :root:not([data-color-scheme]) {\n    color-scheme: dark;\n${dark}\n  }\n}\n`;
+  // A themed selection sets its text color too; the editor's drawn selection
+  // layer only takes the background.
+  const selection =
+    theme.light.selection === undefined && theme.dark.selection === undefined
+      ? ""
+      : "\n::selection {\n  color: var(--selection-text, currentColor);\n}\n";
+  return `${imports}${imports === "" ? "" : "\n\n"}:root {\n  color-scheme: light;\n${fonts}\n${light}\n}\n\n:root[data-color-scheme="dark"] {\n  color-scheme: dark;\n${dark}\n}\n\n@media (prefers-color-scheme: dark) {\n  :root:not([data-color-scheme]) {\n    color-scheme: dark;\n${dark}\n  }\n}\n${selection}`;
 }
 
 function shapeVariables(theme: ThemeConfiguration): readonly string[] {
@@ -666,7 +674,7 @@ export function themeCssResponse(theme: ThemeConfiguration | undefined): Respons
 function modeVariables(mode: ThemeMode): string {
   const hover = (color: string): string => `color-mix(in oklch, ${color} 90%, ${mode.text})`;
   const active = (color: string): string => `color-mix(in oklch, ${color} 80%, ${mode.text})`;
-  const values: Readonly<Record<string, string | number>> = {
+  const values: Readonly<Record<string, string | number | undefined>> = {
     // Elanor's semantic tokens.
     "--semantic-color-background-canvas": mode.page,
     "--semantic-color-background-surface": mode.surface,
@@ -705,6 +713,8 @@ function modeVariables(mode: ThemeMode): string {
     "--semantic-color-text-code": mode.syntax.text,
     "--semantic-color-icon-on-selected-fill": mode.accentContrast,
     // Inkling's domain tokens.
+    "--selection-background": mode.selection?.background,
+    "--selection-text": mode.selection?.text,
     "--editor-background": mode.editorBackground,
     "--editor-active-line-background": mode.editorActiveLine,
     "--participant-text": mode.participantText,
@@ -763,6 +773,6 @@ function modeVariables(mode: ThemeMode): string {
     "--mermaid-note-text": mode.mermaid.noteText,
   };
   return Object.entries(values)
-    .map(([name, value]) => `  ${name}: ${value};`)
+    .flatMap(([name, value]) => (value === undefined ? [] : [`  ${name}: ${value};`]))
     .join("\n");
 }

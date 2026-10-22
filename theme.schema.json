@@ -227,6 +227,16 @@
         "focusRing": { "$ref": "#/$defs/color" },
         "danger": { "$ref": "#/$defs/color" },
         "scrim": { "$ref": "#/$defs/color" },
+        "selection": {
+          "type": "object",
+          "description": "Optional text selection colors. Without them, selections tint the background with the focus ring.",
+          "additionalProperties": false,
+          "required": ["background", "text"],
+          "properties": {
+            "background": { "$ref": "#/$defs/color" },
+            "text": { "$ref": "#/$defs/color" }
+          }
+        },
         "participantText": { "$ref": "#/$defs/color" },
         "presence": {
           "type": "object",

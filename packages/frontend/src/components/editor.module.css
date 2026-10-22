@@ -183,10 +183,9 @@
 
 .editorHost :global(.cm-selectionBackground),
 .editorHost :global(.cm-content ::selection) {
-  background: color-mix(
-    in oklch,
-    var(--semantic-color-focus-ring) 28%,
-    var(--editor-background)
+  background: var(
+    --selection-background,
+    color-mix(in oklch, var(--semantic-color-focus-ring) 28%, var(--editor-background))
   ) !important;
 }
 

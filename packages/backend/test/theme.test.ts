@@ -163,3 +163,23 @@ test("theme JSON rejects remote logos and lengths outside px and rem", async () 
     [true, true],
   );
 });
+
+test("a theme's selection colors apply only when the theme sets them", () => {
+  const selected = {
+    ...inklingTheme,
+    dark: {
+      ...inklingTheme.dark,
+      selection: { background: "oklch(40% 0.1 60)", text: "oklch(95% 0.01 90)" },
+    },
+    light: {
+      ...inklingTheme.light,
+      selection: { background: "oklch(85% 0.08 70)", text: "oklch(25% 0 0)" },
+    },
+  };
+  const stylesheet = themeStylesheet(selected);
+
+  assert.match(stylesheet, /--selection-background: oklch\(85% 0\.08 70\);/u);
+  assert.match(stylesheet, /--selection-background: oklch\(40% 0\.1 60\);/u);
+  assert.match(stylesheet, /::selection \{\n {2}color: var\(--selection-text, currentColor\);/u);
+  assert.doesNotMatch(themeStylesheet(inklingTheme), /--selection-|::selection/u);
+});

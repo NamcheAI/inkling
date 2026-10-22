@@ -29,10 +29,13 @@ body {
 }
 
 ::selection {
-  background: color-mix(
-    in oklch,
-    var(--semantic-color-focus-ring) 28%,
-    var(--semantic-color-background-canvas)
+  background: var(
+    --selection-background,
+    color-mix(
+      in oklch,
+      var(--semantic-color-focus-ring) 28%,
+      var(--semantic-color-background-canvas)
+    )
   );
 }
 
