@@ -7,5 +7,6 @@ GOOGLE_ADMIN_EMAILS=admin@example.com
 GOOGLE_REDIRECT_URI=http://localhost:5173/api/auth/google/callback
 # Optional dedicated HMAC secret; defaults to GOOGLE_CLIENT_SECRET.
 INKLING_OAUTH_STATE_SECRET=
-# Optional: default (Elanor), inkling, paper, or inline custom theme JSON.
+# Optional: default (Elanor), inkling, paper, or custom theme JSON on one single-quoted line,
+# for example the output of `jq -c . my-theme.json`. A shell INKLING_THEME overrides it.
 # INKLING_THEME=paper
