@@ -32,7 +32,8 @@ test("the application shell keeps agent instructions in visible body text", asyn
 
 test(
   "browser pages read, collaborate, comment, preview, and honor share revocation",
-  { skip: browserExecutable === undefined, timeout: 60_000 },
+  // One long end-to-end session: about 25 seconds locally, but GitHub runners take twice that.
+  { skip: browserExecutable === undefined, timeout: 180_000 },
   async () => {
     assert.ok(browserExecutable);
     const directory = await mkdtemp(path.join(tmpdir(), "inkling-browser-"));
