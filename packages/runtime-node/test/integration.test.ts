@@ -23,11 +23,6 @@ test(
     const directory = await mkdtemp(path.join(tmpdir(), "inkling-integration-"));
     try {
       const first = await withServer(directory, async (baseUrl, session) => {
-        const agentInstructions = await fetch(`${baseUrl}/AGENTS.md`);
-        assert.equal(agentInstructions.status, 200);
-        assert.match(agentInstructions.headers.get("content-type") ?? "", /^text\/markdown/u);
-        assert.ok((await agentInstructions.text()).includes(`base URL is ${baseUrl}`));
-
         const { cookieHeader, csrf } = session;
 
         const keyResponse = await fetch(`${baseUrl}/api/api-keys`, {
@@ -348,7 +343,7 @@ test(
         assert.match(unavailableRfc.headers.get("content-type") ?? "", /^text\/html/u);
         const unavailableHtml = await unavailableRfc.text();
         assert.ok(unavailableHtml.indexOf("INKLING AGENT HANDOFF") < 128);
-        assert.ok(unavailableHtml.indexOf("/AGENTS.md") < 256);
+        assert.ok(unavailableHtml.indexOf("/mcp") < 256);
         const publish = await fetch(`${baseUrl}/api/documents/${document.metadata.id}/publish`, {
           headers: authorization,
           method: "POST",
@@ -385,7 +380,7 @@ test(
         assert.doesNotMatch(publishedCsp, /style-src 'unsafe-inline'/u);
         const publishedHtml = await published.text();
         assert.ok(publishedHtml.indexOf("INKLING AGENT HANDOFF") < 128);
-        assert.ok(publishedHtml.indexOf("/AGENTS.md") < 256);
+        assert.ok(publishedHtml.indexOf("/mcp") < 256);
         assert.match(publishedHtml, /Integrated RFC/u);
         assert.match(publishedHtml, /<title>Integrated RFC<\/title>/u);
         assert.match(publishedHtml, /class="public-hero"/u);

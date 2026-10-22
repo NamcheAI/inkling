@@ -6,9 +6,7 @@ import {
   ControlAndLabel,
   Form,
   Heading,
-  InlineCode,
   Input,
-  Link,
   Separator,
   Stack,
   Text,
@@ -28,9 +26,14 @@ import styles from "./settings-dialog.module.css";
 export interface SettingsDialogProps {
   readonly api: ApiClientService;
   readonly onClose: () => void;
+  readonly onOpenAgentAccess: () => void;
 }
 
-export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX.Element {
+export function SettingsDialog({
+  api,
+  onClose,
+  onOpenAgentAccess,
+}: SettingsDialogProps): React.JSX.Element {
   const [label, setLabel] = useState("Agent access");
   const [keys, setKeys] = useState<readonly ApiKeyDto[]>([]);
   const [revealedKeys, setRevealedKeys] = useState<ReadonlyMap<string, string>>(new Map());
@@ -124,16 +127,13 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
         title="API keys"
       >
         <Stack align="stretch" gap="large">
-          <Stack align="stretch" gap="small">
+          <Stack align="center" direction="row" gap="auto" wrap="wrap">
             <Text className={styles["note"]} data-settings-note="">
-              Reuse an active key for coding agents. Create another only when you need separate
-              rotation or revocation. Keys have the same workspace permissions you do.
+              Keys and connected agents act with your permissions.
             </Text>
-            <Text className={styles["note"]} data-mcp-endpoint="">
-              Agents connect to the MCP server at{" "}
-              <InlineCode>{`${location.origin}/mcp`}</InlineCode> and send the key as a bearer
-              token. <Link href="/AGENTS.md">Setup instructions</Link>
-            </Text>
+            <Button data-settings-agent-access="" hierarchy="secondary" onClick={onOpenAgentAccess}>
+              Connect an agent
+            </Button>
           </Stack>
 
           <Separator />
@@ -146,10 +146,10 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
             <Stack align="start" direction="row" gap="auto">
               <Stack gap="xxSmall">
                 <Heading id="api-key-list-title" level={3}>
-                  Reusable access
+                  Active keys
                 </Heading>
                 <Text className={styles["note"]}>
-                  Show and copy a key whenever you connect another agent.
+                  Agents you approved through sign-in and keys you created.
                 </Text>
               </Stack>
               <span aria-label={`${activeKeys.length} active keys`} className={styles["count"]}>
@@ -160,9 +160,7 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
               <Text className={styles["note"]}>Loading keys…</Text>
             ) : null}
             {activeKeys.length === 0 && keyQuery.state.status !== "loading" ? (
-              <Text className={styles["note"]}>
-                Create one key and reuse it across your agents.
-              </Text>
+              <Text className={styles["note"]}>No active keys.</Text>
             ) : null}
             {activeKeys.map((key) => {
               const secret = revealedKeys.get(key.id);
@@ -288,7 +286,7 @@ export function SettingsDialog({ api, onClose }: SettingsDialogProps): React.JSX
 
           <Text className={styles["note"]}>
             Store keys only in your agent's secret storage, an environment variable, or a password
-            manager. Never put one in AGENTS.md, an agent skill, chat, or source control.
+            manager. Never put one in an agent skill, chat, or source control.
           </Text>
           <FormError data-settings-error="">{errors}</FormError>
         </Stack>

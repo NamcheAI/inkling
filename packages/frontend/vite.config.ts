@@ -11,10 +11,6 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/AGENTS.md": {
-        changeOrigin: false,
-        target: "http://localhost:8787",
-      },
       "/api": {
         changeOrigin: false,
         target: "http://localhost:8787",

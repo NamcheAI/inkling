@@ -26,7 +26,9 @@ test("the application shell keeps agent instructions in visible body text", asyn
 
   assert.match(visibleText, /INKLING AGENT HANDOFF/u);
   assert.match(visibleText, /do not summarize this application shell/u);
-  assert.match(visibleText, /\/AGENTS\.md/u);
+  assert.match(visibleText, /\/mcp/u);
+  assert.match(visibleText, /Agent access/u);
+  assert.doesNotMatch(html, /AGENTS\.md/u);
   assert.match(visibleText, /read_document/u);
 });
 
@@ -95,19 +97,34 @@ test(
       await first.locator("[data-account-menu]").waitFor();
       assert.deepEqual(
         await first.locator('[data-account-menu] [role="menuitem"]').allTextContents(),
-        ["API keys", "Sign out"],
+        ["Agent access", "API keys", "Sign out"],
       );
-      await first.locator("[data-open-api-keys]").click();
+      await first.locator("[data-open-agent-access]").click();
+      assert.equal(
+        await first.locator("[data-agent-access-dialog] h2").textContent(),
+        "Agent access",
+      );
+      assert.deepEqual(await first.getByRole("tab").allTextContents(), [
+        "Pi",
+        "Claude Code",
+        "Codex",
+      ]);
+      assert.deepEqual(
+        await first.locator("[data-agent-setup='pi'] [data-agent-command]").allTextContents(),
+        [`pi mcp add inkling --url ${baseUrl}/mcp`, "pi mcp login inkling"],
+      );
+      await first.getByRole("tab", { name: "Codex" }).click();
+      assert.deepEqual(
+        await first.locator("[data-agent-setup='codex'] [data-agent-command]").allTextContents(),
+        [`codex mcp add inkling --url ${baseUrl}/mcp`, "codex mcp login inkling"],
+      );
+      await first.locator("[data-agent-access-api-keys]").click();
+      assert.equal(await first.locator("[data-agent-access-dialog]").count(), 0);
       assert.equal(await first.locator("[data-settings-dialog] [data-dialog-eyebrow]").count(), 0);
       assert.equal(await first.locator("[data-settings-dialog] h2").textContent(), "API keys");
       assert.match(
         (await first.locator("[data-settings-note]").textContent()) ?? "",
-        /Reuse an active key/u,
-      );
-      assert.ok(
-        ((await first.locator("[data-mcp-endpoint]").textContent()) ?? "").includes(
-          `${baseUrl}/mcp`,
-        ),
+        /act with your permissions/u,
       );
       await first.getByLabel("Key name").fill("Browser agent");
       await first.getByRole("button", { name: "Create API key" }).click();

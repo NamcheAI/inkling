@@ -33,10 +33,6 @@ test(
     try {
       google = await startGoogleOAuthMock();
       running = await startWrangler(directory, google.origin);
-      const agentInstructions = await fetch(`${running.baseUrl}/AGENTS.md`);
-      assert.equal(agentInstructions.status, 200);
-      assert.match(agentInstructions.headers.get("content-type") ?? "", /^text\/markdown/u);
-      assert.ok((await agentInstructions.text()).includes(`base URL is ${running.baseUrl}`));
       const themeStylesheet = await fetch(`${running.baseUrl}/theme.css`);
       assert.equal(themeStylesheet.status, 200);
       const themeCss = await themeStylesheet.text();

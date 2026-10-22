@@ -550,7 +550,7 @@ function commandInstance(
         Effect.mapError(
           () =>
             new Error(
-              `No Inkling workspace is configured for ${url.origin}. Read ${url.origin}/AGENTS.md and ask the user to connect it.`,
+              `No Inkling workspace is configured for ${url.origin}. Run \`inkling workspace add ${url.origin} API_KEY\`.`,
             ),
         ),
         Effect.flatMap((instance) => {
