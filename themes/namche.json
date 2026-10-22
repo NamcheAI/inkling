@@ -51,6 +51,10 @@
     "focusRing": "oklch(30.67% 0.1041 263.40)",
     "danger": "oklch(49.37% 0.1840 9.56)",
     "scrim": "oklch(26.86% 0.0000 0.00 / 65%)",
+    "selection": {
+      "background": "oklch(86.51% 0.0858 69.14)",
+      "text": "oklch(26.86% 0.0000 0.00)"
+    },
     "participantText": "oklch(17.76% 0.0000 0.00)",
     "presence": {
       "chroma": 0.14,
@@ -150,6 +154,10 @@
     "focusRing": "oklch(69.06% 0.1133 264.35)",
     "danger": "oklch(70.39% 0.1002 11.95)",
     "scrim": "oklch(26.86% 0.0000 0.00 / 65%)",
+    "selection": {
+      "background": "oklch(41.78% 0.0966 58.98)",
+      "text": "oklch(95.17% 0.0096 93.57)"
+    },
     "participantText": "oklch(17.76% 0.0000 0.00)",
     "presence": {
       "chroma": 0.13,
