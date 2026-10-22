@@ -101,6 +101,7 @@ pnpm update --latest @earendil-works/inkling-frontend \
 pnpm check
 ```
 
-Compare `assets.run_worker_first` in `wrangler.jsonc` with this template when updating. Paths
-missing from it are answered by the static frontend instead of the Worker; agents need `/mcp`,
-`/oauth/*`, and `/.well-known/*`.
+Compare `wrangler.jsonc` with this template when updating, in particular the Durable Object
+migrations and `assets.run_worker_first`. Keep `run_worker_first` at `["/*"]`: the Worker serves the
+frontend itself when no route matches, and narrower patterns let the static frontend answer
+requests the Worker must handle, such as legacy RFC redirects, protected links, and `/mcp`.
