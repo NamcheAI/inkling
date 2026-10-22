@@ -3,8 +3,11 @@
   "name": "earendil-inkling",
   "main": "src/worker.ts",
   "compatibility_date": "2026-03-27",
-  // Staged on rfc-next until the cutover moves the rfc.earendil.com route to this Worker.
-  "routes": [{ "pattern": "rfc-next.earendil.com", "custom_domain": true }],
+  // rfc.earendil.com keeps the zone route it had for the previous site; rfc-next served staging.
+  "routes": [
+    { "pattern": "rfc.earendil.com/*", "zone_name": "earendil.com" },
+    { "pattern": "rfc-next.earendil.com", "custom_domain": true },
+  ],
   // Google sign-in only works on registered callback origins, so do not expose extra hostnames.
   "workers_dev": false,
   "preview_urls": false,

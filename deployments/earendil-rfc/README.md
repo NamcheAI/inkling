@@ -1,21 +1,21 @@
 # Earendil RFCs deployment
 
-This is Earendil's own Inkling deployment, which will replace the RFC site at
-`rfc.earendil.com`. It has the same shape as the public
-[`templates/cloudflare`](../../templates/cloudflare) project, except that it depends on the
-workspace packages instead of released npm versions, so it always deploys the current checkout.
+This is Earendil's own Inkling deployment, serving `rfc.earendil.com`. It has the same shape as
+the public [`templates/cloudflare`](../../templates/cloudflare) project, except that it depends on
+the workspace packages instead of released npm versions, so it always deploys the current
+checkout.
 `make check` verifies that its Durable Object bindings, migrations, and asset routing stay in
 sync with the template and the development Worker.
 
-| Setting           | Value                                                                |
-| ----------------- | -------------------------------------------------------------------- |
-| Cloudflare zone   | `earendil.com` (full setup)                                          |
-| Worker            | `earendil-inkling`                                                   |
-| Staging hostname  | `rfc-next.earendil.com` (Worker Custom Domain)                       |
-| Final hostname    | `rfc.earendil.com` (existing Worker route, moved during the cutover) |
-| R2 buckets        | `earendil-inkling-objects`, `earendil-inkling-objects-preview`       |
-| Legacy RFC site   | `legacy-rfc.earendil.com`, from `earendil-works/rfcs`                |
-| RFC source import | `~/Development/earendil-rfcs`                                        |
+| Setting           | Value                                                          |
+| ----------------- | -------------------------------------------------------------- |
+| Cloudflare zone   | `earendil.com` (full setup)                                    |
+| Worker            | `earendil-inkling`                                             |
+| Hostname          | `rfc.earendil.com` (Worker route, live since 2026-10-22)       |
+| Staging hostname  | `rfc-next.earendil.com` (Worker Custom Domain)                 |
+| R2 buckets        | `earendil-inkling-objects`, `earendil-inkling-objects-preview` |
+| Legacy RFC site   | `legacy-rfc.earendil.com`, from `earendil-works/rfcs`          |
+| RFC source import | `~/Development/earendil-rfcs`                                  |
 
 ## Deploying
 
