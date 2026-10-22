@@ -7,14 +7,14 @@ import { Chip, LifecycleStateChip, VisibilityChip } from "./chip.tsx";
 
 export interface DocumentCatalogRowProps {
   readonly document: CatalogResponse["documents"][number];
-  readonly onSelect?: (() => void) | undefined;
+  readonly onFocus?: (() => void) | undefined;
   readonly publicDocument?: boolean | undefined;
   readonly selected?: boolean | undefined;
 }
 
 export function DocumentCatalogRow({
   document,
-  onSelect,
+  onFocus,
   publicDocument = false,
   selected = false,
 }: DocumentCatalogRowProps): React.JSX.Element {
@@ -32,8 +32,7 @@ export function DocumentCatalogRow({
           ? publicDocumentHref(metadata.id, metadata.rfcNumber)
           : documentHref(metadata.id, metadata.rfcNumber, false, "read", "")
       }
-      onFocus={onSelect}
-      onPointerMove={onSelect}
+      onFocus={onFocus}
     >
       <span className={styles["folio"]} data-catalog-folio="">
         {documentFolio(metadata.rfcNumber)}

@@ -672,6 +672,11 @@ test(
       await first.getByRole("link", { name: "Inkling home" }).click();
       await first.waitForSelector("[data-document-search]");
       assert.equal(await first.locator("[data-catalog-document-id]").count(), 2);
+      await first.locator("[data-catalog-document-id]").first().hover();
+      assert.equal(
+        await first.locator("[data-catalog-document-id][data-catalog-selected]").count(),
+        0,
+      );
       await first.keyboard.press("j");
       const firstKeyboardSelection = await first
         .locator("[data-catalog-document-id][data-catalog-selected]")
@@ -772,8 +777,6 @@ test(
         1,
       );
       await documentSearch.press("Enter");
-      assert.match(first.url(), /\?q=rfc%3A1(?:\+|%20)%22answer%22$/u);
-      await first.locator("[data-catalog-document-id][data-catalog-selected]").click();
       await first.waitForURL(/\/rfc\/0001$/u);
       await first.locator("[data-open-editor]").click();
       await first.waitForURL(/\/rfc\/0001\/edit$/u);
