@@ -156,6 +156,33 @@ export const CatalogResponseSchema = Schema.Struct({
 });
 export type CatalogResponse = typeof CatalogResponseSchema.Type;
 
+export const SearchPassageSchema = Schema.Struct({
+  documentId: Schema.String,
+  endLine: PositiveInteger,
+  headingPath: Schema.Array(Schema.String),
+  matchedBy: Schema.Array(Schema.Literal("keyword", "semantic")),
+  revision: Revision,
+  rfcNumber: Schema.optional(PositiveInteger),
+  score: Schema.Number,
+  snippet: Schema.String,
+  startLine: PositiveInteger,
+  title: Schema.String,
+});
+export type SearchPassageDto = typeof SearchPassageSchema.Type;
+
+export const PassageSearchResponseSchema = Schema.Struct({
+  passages: Schema.Array(SearchPassageSchema),
+  /** Whether semantic retrieval contributed to the ranking. */
+  semantic: Schema.Boolean,
+});
+export type PassageSearchResponse = typeof PassageSearchResponseSchema.Type;
+
+export const SearchRebuildResponseSchema = Schema.Struct({
+  errors: Schema.Array(Schema.String),
+  indexedDocuments: Revision,
+});
+export type SearchRebuildResponse = typeof SearchRebuildResponseSchema.Type;
+
 export const CreateDocumentRequestSchema = Schema.Struct({
   allocateRfc: Schema.optional(Schema.Boolean),
   body: Schema.optional(Schema.String),

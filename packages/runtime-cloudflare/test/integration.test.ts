@@ -197,12 +197,42 @@ test(
       const searchResult = (await search.json()) as { documents: readonly DocumentWire[] };
       assert.equal(searchResult.documents[0]?.metadata.id, first.metadata.id);
       assert.deepEqual(searchResult.documents[0]?.metadata.labels, ["working"]);
+      const passageSearch = async () => {
+        const response = await fetch(`${running.baseUrl}/api/search?q=durable`, {
+          headers: authorization,
+        });
+        assert.equal(response.status, 200);
+        return (await response.json()) as {
+          passages: readonly { documentId: string; headingPath: readonly string[] }[];
+          semantic: boolean;
+        };
+      };
+      const passages = await passageSearch();
+      assert.equal(passages.semantic, false);
+      assert.deepEqual(
+        passages.passages.map((passage) => [passage.documentId, passage.headingPath]),
+        [[first.metadata.id, ["Newest projected title"]]],
+      );
+      const rebuild = await fetch(`${running.baseUrl}/api/admin/search/rebuild`, {
+        headers: authorization,
+        method: "POST",
+      });
+      assert.equal(rebuild.status, 200);
+      assert.deepEqual(await rebuild.json(), { errors: [], indexedDocuments: 2 });
+      assert.deepEqual(await passageSearch(), passages);
       const publication = await fetch(
         `${running.baseUrl}/api/documents/${first.metadata.id}/publish`,
         { headers: authorization, method: "POST" },
       );
       assert.equal(publication.status, 200);
       const publicationMetadata = (await publication.json()) as DocumentWire["metadata"];
+      const publicSearch = await fetch(`${running.baseUrl}/api/public/documents?q=durable`);
+      assert.deepEqual(
+        ((await publicSearch.json()) as { documents: readonly DocumentWire[] }).documents.map(
+          (document) => document.metadata.id,
+        ),
+        [first.metadata.id],
+      );
       assert.deepEqual(publicationMetadata.authors, [
         {
           displayName: "Armin Ronacher",

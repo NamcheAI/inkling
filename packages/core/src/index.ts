@@ -106,6 +106,7 @@ export {
 export type { LineRange, TextReplacement } from "./domain/body.ts";
 export { applyUniqueTextReplacements, BodyEditError, readLineRange } from "./domain/body.ts";
 export type {
+  CatalogBodyMatches,
   CatalogSearchField,
   CatalogSearchOptions,
   CatalogSearchQuery,
@@ -124,6 +125,7 @@ export {
   applyCatalogSummary,
   catalogSearchFields,
   emptyWorkspaceCatalog,
+  filterCatalog,
   findPerson,
   normalizeSearchText,
   normalizeWorkspaceCatalog,
@@ -135,12 +137,30 @@ export {
   tombstoneDocument,
   upsertPerson,
 } from "./domain/catalog.ts";
+export type { ChunkOptions, SearchChunk, SearchVariant } from "./domain/search.ts";
+export { chunkMarkdown, passageEmbeddingText, reciprocalRankFusion } from "./domain/search.ts";
 export { encodeBase62, identifierTag, taggedId, uuidV7Bytes } from "./application/identifiers.ts";
 export type { IdentifierTag } from "./application/identifiers.ts";
 export type {
   DigestService,
   DurableDocumentJournalService,
+  EmbedderService,
+  EmbeddingPurpose,
   IdGeneratorService,
+  KeywordQuery,
+  PassageMatchKind,
+  PassageSearchRequest,
+  SearchDatabaseService,
+  SearchDocumentInput,
+  SearchIndexService,
+  SearchPassage,
+  SearchRefreshResult,
+  SqlRow,
+  SqlStatement,
+  SqlValue,
+  VectorMatch,
+  VectorRecord,
+  VectorStoreService,
   JournalActor,
   JournalEntry,
   JournalEntryInput,
@@ -158,6 +178,7 @@ export {
   DurableDocumentJournal,
   IdGenerator,
   ObjectStore,
+  SearchIndex,
   SecretHasher,
   SecureToken,
   StorageError,

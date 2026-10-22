@@ -25,10 +25,12 @@ import {
   DurableDocumentJournal,
   emptyAuthenticationState,
   emptyWorkspaceCatalog,
+  filterCatalog,
   IdGenerator,
   identifierTag,
   isDocumentActionAllowed,
   ObjectStore,
+  parseCatalogSearchQuery,
   personId,
   publicCatalog,
   purgeDocument,
@@ -38,6 +40,7 @@ import {
   resolveAuthorsByEmail,
   revokeApiKey,
   searchCatalog,
+  SearchIndex,
   isDocumentTrashExpired,
   SecretHasher,
   SecureToken,
@@ -58,6 +61,7 @@ import type {
   CapabilityAccess,
   CatalogSummary,
   CommentActor,
+  DocumentId,
   DocumentMetadata,
   DocumentRevision,
   MetadataPatch,
@@ -100,7 +104,10 @@ import type {
   DocumentResponse,
   ImportDocumentRequest,
   MetadataPatchRequest,
+  PassageSearchResponse,
   PublicDocumentResponse,
+  SearchPassageDto,
+  SearchRebuildResponse,
   ServerCollaborationMessage,
   ShareLinkCreateRequest,
   ShareLinkDto,
@@ -222,6 +229,7 @@ export function makeLocalInklingApplication(
   | typeof SecureToken.Service
   | typeof IdGenerator.Service
   | typeof MarkdownRenderer.Service
+  | typeof SearchIndex.Service
 > {
   return Effect.gen(function* () {
     const stateStore = yield* WorkspaceStateStore;
@@ -232,6 +240,7 @@ export function makeLocalInklingApplication(
     const tokens = yield* SecureToken;
     const ids = yield* IdGenerator;
     const renderer = yield* MarkdownRenderer;
+    const searchIndex = yield* SearchIndex;
     const stateMutex = yield* Effect.makeSemaphore(1);
     const roomMutex = yield* Effect.makeSemaphore(1);
     const rooms = new Map<string, DocumentAuthorityService>();
@@ -478,47 +487,102 @@ export function makeLocalInklingApplication(
         );
       });
 
+    const indexDocumentVariants = (
+      document: DocumentResponse,
+    ): Effect.Effect<void, ApplicationError> =>
+      Effect.gen(function* () {
+        if (!searchIndex.enabled) return;
+        const id = document.metadata.id as DocumentId;
+        const entry = state.catalog.entries.find((candidate) => candidate.documentId === id);
+        if (entry?.status !== "active" || document.metadata.deletedAt !== undefined) {
+          yield* searchIndex.removeDocument(id);
+          return;
+        }
+        yield* searchIndex.indexDocument({
+          body: document.body,
+          documentId: id,
+          revision: document.metadata.headRevision as DocumentRevision,
+          title: document.metadata.title,
+          variant: "working",
+        });
+        const publishedRevision = document.metadata.publishedRevision as
+          | DocumentRevision
+          | undefined;
+        if (publishedRevision === undefined) {
+          yield* searchIndex.removeDocument(id, "published");
+          return;
+        }
+        if ((yield* searchIndex.indexedRevision(id, "published")) === publishedRevision) return;
+        const published = yield* provideAuthorityDependencies(
+          loadDocumentRevision(
+            { documentId: id, workspaceId: state.workspaceId },
+            publishedRevision,
+          ),
+        );
+        yield* searchIndex.indexDocument({
+          body: redactProtectedLinkText(published.body),
+          documentId: id,
+          revision: publishedRevision,
+          title: published.metadata.title,
+          variant: "published",
+        });
+      }).pipe(Effect.mapError(toApplicationError));
+
+    /** The search index is a projection: its failures are logged, never surfaced to writers. */
+    const updateSearchIndex = (document: DocumentResponse): Effect.Effect<void> =>
+      indexDocumentVariants(document).pipe(
+        Effect.catchAll((error) =>
+          Effect.logError("Search index update failed", {
+            code: error.code,
+            documentId: document.metadata.id,
+            message: error.message,
+          }),
+        ),
+      );
+
     const projectDocument = (
       room: DocumentAuthorityService,
     ): Effect.Effect<void, ApplicationError> =>
-      room.snapshot(systemPrincipal, new Date().toISOString()).pipe(
-        Effect.mapError(toApplicationError),
-        Effect.flatMap(summaryFromSnapshot),
-        Effect.flatMap((summary) =>
-          withState(
-            applyCatalogSummary(state.catalog, summary).pipe(
-              Effect.mapError(toApplicationError),
-              Effect.flatMap((catalog) =>
-                saveState({ ...state, catalog }).pipe(Effect.mapError(toApplicationError)),
-              ),
+      Effect.gen(function* () {
+        const snapshot = yield* room
+          .snapshot(systemPrincipal, new Date().toISOString())
+          .pipe(Effect.mapError(toApplicationError));
+        const summary = yield* summaryFromSnapshot(snapshot);
+        yield* withState(
+          applyCatalogSummary(state.catalog, summary).pipe(
+            Effect.mapError(toApplicationError),
+            Effect.flatMap((catalog) =>
+              saveState({ ...state, catalog }).pipe(Effect.mapError(toApplicationError)),
             ),
           ),
-        ),
-      );
+        );
+        yield* updateSearchIndex(toDocumentResponse(snapshot));
+      });
 
     const projectDocumentStatus = (
       room: DocumentAuthorityService,
       status: "active" | "deleted",
     ): Effect.Effect<void, ApplicationError> =>
-      room.snapshot(systemPrincipal, new Date().toISOString()).pipe(
-        Effect.mapError(toApplicationError),
-        Effect.flatMap(summaryFromSnapshot),
-        Effect.flatMap((summary) =>
-          withState(
-            applyCatalogSummary(state.catalog, summary).pipe(
-              Effect.flatMap((catalog) =>
-                status === "active"
-                  ? activateDocument(catalog, room.documentId)
-                  : tombstoneDocument(catalog, room.documentId),
-              ),
-              Effect.mapError(toApplicationError),
-              Effect.flatMap((catalog) =>
-                saveState({ ...state, catalog }).pipe(Effect.mapError(toApplicationError)),
-              ),
+      Effect.gen(function* () {
+        const snapshot = yield* room
+          .snapshot(systemPrincipal, new Date().toISOString())
+          .pipe(Effect.mapError(toApplicationError));
+        const summary = yield* summaryFromSnapshot(snapshot);
+        yield* withState(
+          applyCatalogSummary(state.catalog, summary).pipe(
+            Effect.flatMap((catalog) =>
+              status === "active"
+                ? activateDocument(catalog, room.documentId)
+                : tombstoneDocument(catalog, room.documentId),
+            ),
+            Effect.mapError(toApplicationError),
+            Effect.flatMap((catalog) =>
+              saveState({ ...state, catalog }).pipe(Effect.mapError(toApplicationError)),
             ),
           ),
-        ),
-      );
+        );
+        yield* updateSearchIndex(toDocumentResponse(snapshot));
+      });
 
     const releaseDocumentRoom = (rawDocumentId: string): Effect.Effect<void> =>
       Effect.gen(function* () {
@@ -550,6 +614,7 @@ export function makeLocalInklingApplication(
             }),
           ),
         );
+        yield* searchIndex.removeDocument(id).pipe(searchFallback(undefined));
       });
 
     const purgeDocumentData = (rawDocumentId: string): Effect.Effect<void, ApplicationError> =>
@@ -719,6 +784,43 @@ export function makeLocalInklingApplication(
         };
       });
 
+    const rebuildSearch: Effect.Effect<SearchRebuildResponse, ApplicationError> = Effect.gen(
+      function* () {
+        yield* searchIndex.clear.pipe(Effect.mapError(toApplicationError));
+        const errors: string[] = [];
+        let indexedDocuments = 0;
+        for (const entry of state.catalog.entries) {
+          if (entry.status !== "active") continue;
+          // Open rooms hold the newest state. Otherwise recover read-only from durable
+          // storage so a rebuild never writes on behalf of a document authority.
+          const open = rooms.get(entry.documentId);
+          const indexed = yield* (
+            open === undefined
+              ? provideAuthorityDependencies(
+                  makeDocumentAuthority({
+                    documentId: entry.documentId,
+                    workspaceId: state.workspaceId,
+                  }),
+                ).pipe(
+                  Effect.flatMap((room) =>
+                    room
+                      .snapshot(systemPrincipal, new Date().toISOString())
+                      .pipe(Effect.ensuring(room.close)),
+                  ),
+                )
+              : open.snapshot(systemPrincipal, new Date().toISOString())
+          ).pipe(
+            Effect.mapError(toApplicationError),
+            Effect.flatMap((snapshot) => indexDocumentVariants(toDocumentResponse(snapshot))),
+            Effect.either,
+          );
+          if (Either.isLeft(indexed)) errors.push(`${entry.documentId}: ${indexed.left.message}`);
+          else indexedDocuments += 1;
+        }
+        return { errors, indexedDocuments };
+      },
+    );
+
     const service: InklingApplicationService = {
       authorizeRequest: resolvePrincipal,
       documentRuntimeConfiguration: runtimeConfiguration,
@@ -741,6 +843,7 @@ export function makeLocalInklingApplication(
               ),
             ),
           ),
+          Effect.zipRight(updateSearchIndex(document)),
         ),
       resolvePeople,
       releaseDocumentRoom,
@@ -757,6 +860,7 @@ export function makeLocalInklingApplication(
               ),
             ),
           ),
+          Effect.zipRight(updateSearchIndex(document)),
         ),
       markCatalogRestored: (document) =>
         summaryFromDocument(document).pipe(
@@ -771,6 +875,7 @@ export function makeLocalInklingApplication(
               ),
             ),
           ),
+          Effect.zipRight(updateSearchIndex(document)),
         ),
       markCatalogPurged: removeDocumentState,
       purgeExpiredDocuments: (now) =>
@@ -892,6 +997,7 @@ export function makeLocalInklingApplication(
             people: state.catalog.people,
           };
           const errors: string[] = [];
+          const recoveredSnapshots: DocumentSnapshot[] = [];
           for (const rawDocumentId of documentIds) {
             if (retainedEntries.some((entry) => entry.documentId === rawDocumentId)) continue;
             const recovered = yield* provideAuthorityDependencies(
@@ -930,10 +1036,16 @@ export function makeLocalInklingApplication(
               Effect.mapError(toApplicationError),
             );
             rooms.set(room.documentId, room);
+            recoveredSnapshots.push(snapshot);
           }
           if (errors.length === 0) {
             yield* saveState({ ...state, catalog: rebuilt }).pipe(
               Effect.mapError(toApplicationError),
+            );
+            yield* Effect.forEach(
+              recoveredSnapshots,
+              (snapshot) => updateSearchIndex(toDocumentResponse(snapshot)),
+              { discard: true },
             );
           }
           return { checkedObjects: documentIds.length, errors };
@@ -1031,6 +1143,16 @@ export function makeLocalInklingApplication(
             catalog: normalizeWorkspaceCatalog(decodedState.catalog as WorkspaceCatalogState),
           };
           yield* saveState(restored).pipe(Effect.mapError(toApplicationError));
+          yield* rebuildSearch.pipe(
+            Effect.tap(({ errors }) =>
+              errors.length === 0
+                ? Effect.void
+                : Effect.logWarning("Search index rebuild after restore was incomplete", errors),
+            ),
+            Effect.catchAll((error) =>
+              Effect.logError("Search index rebuild after restore failed", error.message),
+            ),
+          );
           return { checkedObjects: objects.length, errors: [] };
         }),
       verifyWorkspace: (credentials) =>
@@ -1465,6 +1587,7 @@ export function makeLocalInklingApplication(
               ),
             ),
           );
+          yield* updateSearchIndex(toDocumentResponse(snapshot));
           return toDocumentResponse(snapshot);
         }),
       importDocument: (credentials, request: ImportDocumentRequest) =>
@@ -1634,6 +1757,7 @@ export function makeLocalInklingApplication(
               ),
             ),
           );
+          yield* updateSearchIndex(toDocumentResponse(snapshot));
           return toDocumentResponse(snapshot);
         }),
       createThread: (credentials, rawDocumentId, request) =>
@@ -1816,7 +1940,27 @@ export function makeLocalInklingApplication(
       listPublicDocuments: (query, lifecycleState, label) =>
         Effect.gen(function* () {
           const normalizedQuery = normalizeSearchText(query);
-          const entries = publicCatalog(state.catalog);
+          const bodyMatches =
+            normalizedQuery.length === 0
+              ? new Set<DocumentId>()
+              : yield* searchIndex
+                  .matchDocuments({ match: "all", phrases: [normalizedQuery] }, "published")
+                  .pipe(searchFallback(new Set<DocumentId>()));
+          const metadataMatches = (metadata: {
+            readonly labels: readonly string[];
+            readonly rfcNumber?: number | undefined;
+            readonly title: string;
+          }): boolean =>
+            normalizeSearchText(
+              `${metadata.rfcNumber ?? ""} ${metadata.title} ${metadata.labels.join(" ")}`,
+            ).includes(normalizedQuery);
+          // Only candidates are loaded from storage; the published revision decides the match.
+          const entries = publicCatalog(state.catalog).filter(
+            (summary) =>
+              normalizedQuery.length === 0 ||
+              bodyMatches.has(summary.documentId) ||
+              metadataMatches(summary),
+          );
           const documents = yield* Effect.forEach(entries, (summary) => {
             const publishedRevision = summary.publishedRevision;
             if (publishedRevision === undefined) return Effect.succeed(undefined);
@@ -1831,10 +1975,9 @@ export function makeLocalInklingApplication(
                 metadataWithResolvedAuthors(snapshot.metadata).pipe(
                   Effect.map((metadata) => {
                     const publicBody = redactProtectedLinkText(snapshot.body);
-                    const searchText = normalizeSearchText(
-                      `${metadata.rfcNumber ?? ""} ${metadata.title} ${publicBody} ${metadata.labels.join(" ")}`,
-                    );
-                    return (normalizedQuery.length === 0 || searchText.includes(normalizedQuery)) &&
+                    return (normalizedQuery.length === 0 ||
+                      bodyMatches.has(summary.documentId) ||
+                      metadataMatches(metadata)) &&
                       (lifecycleState === undefined ||
                         metadata.lifecycleState === lifecycleState) &&
                       (label === undefined || metadata.labels.includes(label))
@@ -1863,12 +2006,46 @@ export function makeLocalInklingApplication(
           yield* authorizeWorkspace(principal, "read-catalog").pipe(
             Effect.mapError(toApplicationError),
           );
+          const parsed = parseCatalogSearchQuery(query);
+          const freeTerms = [
+            ...new Set(
+              parsed.terms.flatMap((term) => (term.field === undefined ? [term.value] : [])),
+            ),
+          ];
+          const bodyMatches = new Map(
+            yield* Effect.forEach(freeTerms, (term) =>
+              searchIndex.matchDocuments({ match: "all", phrases: [term] }, "working").pipe(
+                searchFallback(new Set<DocumentId>()),
+                Effect.map((documentIds) => [term, documentIds] as const),
+              ),
+            ),
+          );
           const summaries = searchCatalog(state.catalog, query, {
+            bodyMatches,
             currentPersonId:
               principal.kind === "workspace" || principal.kind === "api-key"
                 ? principal.personId
                 : undefined,
           });
+          const positiveTerms = parsed.terms.flatMap((term) =>
+            term.field === undefined && !term.negated ? [term.value] : [],
+          );
+          const excerpts =
+            positiveTerms.length === 0
+              ? new Map<DocumentId, string>()
+              : yield* searchIndex
+                  .excerpts(
+                    { match: "any", phrases: positiveTerms },
+                    "working",
+                    summaries
+                      .filter((summary) =>
+                        positiveTerms.some((term) =>
+                          bodyMatches.get(term)?.has(summary.documentId),
+                        ),
+                      )
+                      .map((summary) => summary.documentId),
+                  )
+                  .pipe(searchFallback(new Map<DocumentId, string>()));
           const documents = yield* Effect.forEach(summaries, (summary) =>
             summary.metadata === undefined
               ? getRoom(summary.documentId).pipe(
@@ -1877,12 +2054,12 @@ export function makeLocalInklingApplication(
                   ),
                   Effect.mapError(toApplicationError),
                   Effect.map((snapshot) => ({
-                    excerpt: summary.excerpt,
+                    excerpt: excerpts.get(summary.documentId) ?? summary.excerpt,
                     metadata: snapshot.metadata as DocumentMetadataDto,
                   })),
                 )
               : Effect.succeed({
-                  excerpt: summary.excerpt,
+                  excerpt: excerpts.get(summary.documentId) ?? summary.excerpt,
                   metadata: {
                     ...summary.metadata,
                     labels: summary.workingLabels ?? summary.metadata.labels,
@@ -1896,6 +2073,99 @@ export function makeLocalInklingApplication(
             ),
           } satisfies CatalogResponse;
         }),
+      searchPassages: (credentials, query, limit) =>
+        Effect.gen(function* () {
+          const principal = yield* resolvePrincipal(credentials);
+          yield* authorizeWorkspace(principal, "read-catalog").pipe(
+            Effect.mapError(toApplicationError),
+          );
+          const parsed = parseCatalogSearchQuery(query);
+          const positiveTerms = [
+            ...new Set(
+              parsed.terms.flatMap((term) =>
+                term.field === undefined && !term.negated ? [term.value] : [],
+              ),
+            ),
+          ];
+          if (positiveTerms.length === 0) {
+            return yield* applicationFailure(
+              "search_terms_required",
+              "Passage search needs at least one search term besides filters.",
+              400,
+            );
+          }
+          const negatedTerms = parsed.terms.flatMap((term) =>
+            term.field === undefined && term.negated ? [term.value] : [],
+          );
+          const excluded = new Set<DocumentId>();
+          for (const term of negatedTerms) {
+            const matches = yield* searchIndex
+              .matchDocuments({ match: "all", phrases: [term] }, "working")
+              .pipe(Effect.mapError(toApplicationError));
+            for (const matched of matches) excluded.add(matched);
+          }
+          const now = new Date().toISOString();
+          const currentPersonId =
+            principal.kind === "workspace" || principal.kind === "api-key"
+              ? principal.personId
+              : undefined;
+          // Authorization happens here, against structured metadata, before anything surfaces.
+          const readable = filterCatalog(state.catalog, parsed, { currentPersonId }).filter(
+            (summary) =>
+              summary.metadata !== undefined &&
+              isDocumentActionAllowed(principal, "read-working", summary.metadata, now) &&
+              !excluded.has(summary.documentId) &&
+              !negatedTerms.some((term) => normalizeSearchText(summary.title).includes(term)),
+          );
+          const readableById = new Map(readable.map((summary) => [summary.documentId, summary]));
+          const activeDocuments = state.catalog.entries.filter(
+            (entry) => entry.status === "active",
+          ).length;
+          const passages = yield* searchIndex
+            .searchPassages({
+              documentIds:
+                readable.length === activeDocuments
+                  ? undefined
+                  : readable.map((summary) => summary.documentId),
+              keyword: { match: "any", phrases: positiveTerms },
+              limit: Math.max(1, Math.min(limit ?? 10, 50)),
+              perDocumentLimit: 3,
+              semantic: positiveTerms.join(" "),
+              variant: "working",
+            })
+            .pipe(Effect.mapError(toApplicationError));
+          return {
+            passages: passages.flatMap((passage): readonly SearchPassageDto[] => {
+              const summary = readableById.get(passage.documentId);
+              if (summary === undefined) return [];
+              return [
+                {
+                  documentId: passage.documentId,
+                  endLine: passage.endLine,
+                  headingPath: passage.headingPath,
+                  matchedBy: passage.matchedBy,
+                  revision: passage.revision,
+                  ...(summary.rfcNumber === undefined ? {} : { rfcNumber: summary.rfcNumber }),
+                  score: passage.score,
+                  snippet: passage.snippet,
+                  startLine: passage.startLine,
+                  title: summary.title,
+                },
+              ];
+            }),
+            semantic: searchIndex.semantic,
+          } satisfies PassageSearchResponse;
+        }),
+      rebuildSearchIndex: (credentials) =>
+        resolvePrincipal(credentials).pipe(
+          Effect.flatMap(requireAdministrator),
+          Effect.zipRight(rebuildSearch),
+        ),
+      refreshSearchIndex: () =>
+        searchIndex.refresh(Date.now() - 10_000).pipe(
+          Effect.map((result) => result.pending),
+          Effect.mapError(toApplicationError),
+        ),
       listDeletedDocuments: (credentials) =>
         Effect.gen(function* () {
           const principal = yield* resolvePrincipal(credentials);
@@ -2455,6 +2725,20 @@ export function makeLocalInklingApplication(
   });
 }
 
+/** Search is a projection: when it is unavailable, listings degrade instead of failing. */
+function searchFallback<B>(fallback: B) {
+  return <A, E extends { readonly message: string }, R>(
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A | B, never, R> =>
+    effect.pipe(
+      Effect.catchAll((error) =>
+        Effect.logWarning("Search index unavailable", error.message).pipe(
+          Effect.as<A | B>(fallback),
+        ),
+      ),
+    );
+}
+
 export function localApplicationLayer(options: LocalApplicationOptions = {}) {
   return Layer.effect(InklingApplication, makeLocalInklingApplication(options));
 }
@@ -2800,7 +3084,6 @@ function summaryFromSnapshot(snapshot: DocumentSnapshot): Effect.Effect<CatalogS
 }
 
 function summaryFromDocument(document: DocumentResponse): Effect.Effect<CatalogSummary> {
-  const body = normalizeSearchText(document.body);
   return parseDocumentSource(document.body).pipe(
     Effect.map((source) => source.frontmatter?.labels ?? document.metadata.labels),
     Effect.catchAll(() => Effect.succeed(document.metadata.labels)),
@@ -2811,7 +3094,6 @@ function summaryFromDocument(document: DocumentResponse): Effect.Effect<CatalogS
       excerpt: excerpt(document.body),
       labels: document.metadata.labels,
       metadata: document.metadata as DocumentMetadata,
-      normalizedBody: body,
       publishedRevision: document.metadata.publishedRevision as DocumentRevision | undefined,
       revision: document.metadata.headRevision as DocumentRevision,
       reviewers: document.metadata.reviewers as readonly PersonReference[],

@@ -24,10 +24,12 @@ import type {
   EditMessageRequest,
   ImportDocumentRequest,
   MetadataPatchRequest,
+  PassageSearchResponse,
   PublicDocumentResponse,
   ReplaceBodyRequest,
   ReplyRequest,
   ResolutionRequest,
+  SearchRebuildResponse,
   ShareLinkCreateRequest,
   ShareLinksResponse,
   ShareUnlockResponse,
@@ -204,6 +206,21 @@ export interface InklingApplicationService {
   readonly listDeletedDocuments: (
     credentials: RequestCredentials,
   ) => Effect.Effect<CatalogResponse, ApplicationError>;
+  /** Ranked passages from working drafts the caller may read. */
+  readonly searchPassages: (
+    credentials: RequestCredentials,
+    query: string,
+    limit?: number,
+  ) => Effect.Effect<PassageSearchResponse, ApplicationError>;
+  /**
+   * Rebuilds the search projection from current document state. Cloudflare
+   * flushes document authorities to checkpoints before calling this.
+   */
+  readonly rebuildSearchIndex: (
+    credentials: RequestCredentials,
+  ) => Effect.Effect<SearchRebuildResponse, ApplicationError>;
+  /** Embeds settled passages; returns how many still await embedding. */
+  readonly refreshSearchIndex: () => Effect.Effect<number, ApplicationError>;
   readonly listPublicDocuments: (
     query: string,
     lifecycleState?: string,

@@ -19,6 +19,7 @@ import {
 import type {
   GoogleAuthenticationEnvironment,
   InklingApplicationService,
+  OpenAiCompatibleEmbedderOptions,
   ThemeConfiguration,
 } from "@earendil-works/inkling-backend";
 import { MarkdownRendererLive } from "@earendil-works/inkling-renderer";
@@ -26,6 +27,7 @@ import { MarkdownRendererLive } from "@earendil-works/inkling-renderer";
 import { localApplicationLayer } from "./application.ts";
 import { DigestLive, IdGeneratorLive, SecretHasherLive, SecureTokenLive } from "./crypto.ts";
 import { acquireDataDirectoryLock, DataDirectoryLockError } from "./lock.ts";
+import { embeddingsFromEnvironment, searchIndexLayer } from "./search.ts";
 import { journalLayer, objectStoreLayer, workspaceStateStoreLayer } from "./storage.ts";
 import { installWebSocketServer } from "./websocket.ts";
 
@@ -36,6 +38,8 @@ export interface StartServerOptions {
   readonly googleAuthentication?: GoogleAuthenticationEnvironment | undefined;
   readonly onListen?: ((port: number) => void) | undefined;
   readonly theme?: string | undefined;
+  /** Semantic search embeddings; defaults to the `INKLING_EMBEDDINGS_*` environment. */
+  readonly embeddings?: OpenAiCompatibleEmbedderOptions | undefined;
 }
 
 export interface RunningServer {
@@ -64,7 +68,8 @@ export function startServer(
   return Effect.gen(function* () {
     const theme = yield* loadTheme(options.theme);
     yield* acquireDataDirectoryLock(options.dataDirectory);
-    const runtime = createRuntime(options.dataDirectory);
+    const embeddings = options.embeddings ?? embeddingsFromEnvironment();
+    const runtime = createRuntime(options.dataDirectory, embeddings);
     yield* Effect.tryPromise({
       catch: (cause) =>
         new DataDirectoryLockError({
@@ -91,6 +96,26 @@ export function startServer(
         yield* Effect.sleep("1 hour");
       }
     }).pipe(Effect.forkScoped);
+
+    if (embeddings !== undefined) {
+      yield* Effect.gen(function* () {
+        while (true) {
+          const pending = yield* Effect.tryPromise({
+            catch: (error) => error,
+            try: () =>
+              runtime.runPromise(
+                Effect.flatMap(InklingApplication, (application) =>
+                  application.refreshSearchIndex(),
+                ),
+              ),
+          }).pipe(
+            Effect.tapError((error) => Effect.logError("Inkling search embedding failed", error)),
+            Effect.orElseSucceed(() => 0),
+          );
+          yield* Effect.sleep(pending > 0 ? "2 seconds" : "10 seconds");
+        }
+      }).pipe(Effect.forkScoped);
+    }
 
     const app = createBackendApp({
       googleAuthentication: options.googleAuthentication ?? googleAuthenticationFromEnvironment(),
@@ -169,6 +194,7 @@ export function googleAuthenticationFromEnvironment(
 
 function createRuntime(
   dataDirectory: string,
+  embeddings: OpenAiCompatibleEmbedderOptions | undefined,
 ): ManagedRuntime.ManagedRuntime<InklingApplicationService, never> {
   const base = Layer.mergeAll(
     NodeFileSystem.layer,
@@ -181,8 +207,12 @@ function createRuntime(
     objectStoreLayer(dataDirectory),
     journalLayer(dataDirectory),
     workspaceStateStoreLayer(dataDirectory),
+    searchIndexLayer(dataDirectory, { embeddings }),
   ).pipe(Layer.provide(base));
   const dependencies = Layer.mergeAll(base, storage, IdGeneratorLive);
   const application = localApplicationLayer().pipe(Layer.provide(dependencies), Layer.orDie);
   return ManagedRuntime.make(application);
 }
+
+export { embeddingsFromEnvironment, openSqliteSearchDatabase, searchIndexLayer } from "./search.ts";
+export type { NodeSearchOptions, SqliteSearchDatabase } from "./search.ts";

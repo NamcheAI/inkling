@@ -7,6 +7,7 @@ import type {
   DocumentResponse,
   DocumentSummary,
   PersonDto,
+  SearchPassageDto,
 } from "@earendil-works/inkling-protocol";
 
 import { canonicalRfcPath } from "../routes.ts";
@@ -59,7 +60,10 @@ export function sliceLines(
   });
 }
 
-export function documentUrl(origin: string, metadata: DocumentMetadataDto): string {
+export function documentUrl(
+  origin: string,
+  metadata: Pick<DocumentMetadataDto, "id" | "rfcNumber">,
+): string {
   return `${origin}${
     metadata.rfcNumber === undefined
       ? `/documents/${encodeURIComponent(metadata.id)}`
@@ -172,6 +176,21 @@ export function renderCatalog(
       ? [`\n${total - documents.length} more not shown; narrow the query or raise limit.`]
       : []),
   ].join("\n");
+}
+
+export function renderPassages(passages: readonly SearchPassageDto[]): string {
+  return passages
+    .map((passage, index) => {
+      const folio = passage.rfcNumber === undefined ? "Note" : formatRfcNumber(passage.rfcNumber);
+      const section =
+        passage.headingPath.length === 0 ? "" : ` › ${passage.headingPath.join(" › ")}`;
+      return [
+        `${index + 1}. ${folio} ${passage.documentId} "${passage.title}"${section}`,
+        `   Lines ${passage.startLine}-${passage.endLine} at revision ${passage.revision}; matched by ${passage.matchedBy.join(" and ")}`,
+        `   <passage>${passage.snippet}</passage>`,
+      ].join("\n");
+    })
+    .join("\n\n");
 }
 
 export function renderHistory(

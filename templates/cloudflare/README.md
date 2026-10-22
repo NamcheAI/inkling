@@ -69,6 +69,24 @@ Deploy with:
 pnpm deploy
 ```
 
+## Optional semantic search
+
+Keyword search works without configuration. To let agents also find passages that use different
+words, create a Vectorize index and bind it together with Workers AI in `wrangler.jsonc`:
+
+```sh
+pnpm exec wrangler vectorize create inkling-passages --dimensions=768 --metric=cosine
+```
+
+```jsonc
+"ai": { "binding": "AI" },
+"vectorize": [{ "binding": "INKLING_VECTORS", "index_name": "inkling-passages" }],
+```
+
+The dimensions match the default `@cf/baai/bge-base-en-v1.5` model. To use another Workers AI
+embedding model, set the `INKLING_EMBEDDING_MODEL` variable and size the index to match. Passages
+are embedded in the background, starting with the next document change.
+
 Do not remove or rewrite existing Durable Object migrations in `wrangler.jsonc`. New Inkling
 versions may require migrations to be appended during an upgrade.
 

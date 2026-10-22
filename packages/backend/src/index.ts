@@ -76,6 +76,20 @@ export {
   shareProofCookieNameFromToken,
 } from "./application.ts";
 export { localApplicationLayer, makeLocalInklingApplication } from "./local.ts";
+export {
+  disabledSearchIndex,
+  DisabledSearchIndexLive,
+  embeddingFailure,
+  makeOpenAiCompatibleEmbedder,
+  makeSqlSearchIndex,
+  makeSqlVectorStore,
+  sqlSearchIndexLayer,
+} from "./search.ts";
+export type {
+  OpenAiCompatibleEmbedderOptions,
+  SemanticSearchConfiguration,
+  SqlSearchIndexOptions,
+} from "./search.ts";
 export type { LocalApplicationOptions } from "./local.ts";
 export { canonicalRfcPath, protectedLinkPath, rfcRedirectLocation } from "./routes.ts";
 export {
@@ -318,6 +332,16 @@ export function createBackendApp(options: BackendOptions = {}): Hono {
   app.get("/api/documents", (context) =>
     execute(context, options, (service) =>
       service.listDocuments(credentials(context), context.req.query("q") ?? ""),
+    ),
+  );
+
+  app.get("/api/search", (context) =>
+    execute(context, options, (service) =>
+      optionalPositiveInteger(context.req.query("limit"), "result limit").pipe(
+        Effect.flatMap((limit) =>
+          service.searchPassages(credentials(context), context.req.query("q") ?? "", limit),
+        ),
+      ),
     ),
   );
 
@@ -858,6 +882,12 @@ export function createBackendApp(options: BackendOptions = {}): Hono {
     ),
   );
 
+  app.post("/api/admin/search/rebuild", (context) =>
+    execute(context, options, (service) =>
+      mutation(context, service.rebuildSearchIndex(credentials(context))),
+    ),
+  );
+
   app.post("/api/api-keys", (context) =>
     execute(context, options, (service) =>
       mutation(context, readJson(context, ApiKeyCreateRequestSchema)).pipe(
@@ -987,7 +1017,7 @@ Every tool's \`document\` argument accepts a complete URL on this workspace, a d
 
 ## Tools
 
-- \`search_documents\`, \`read_document\`, \`list_document_history\`
+- \`search_documents\`, \`search_passages\`, \`read_document\`, \`list_document_history\`
 - \`create_document\`, \`edit_document\`, \`replace_document_body\`, \`update_document_metadata\`, \`assign_rfc_number\`
 - \`add_comment\`, \`reply_to_comment\`, \`edit_comment\`, \`delete_comment\`, \`resolve_comment_thread\`
 - \`publish_document\`, \`unpublish_document\`
@@ -995,6 +1025,7 @@ Every tool's \`document\` argument accepts a complete URL on this workspace, a d
 
 ## Safe workflow
 
+- To find where something is discussed, use \`search_passages\`; it returns matching sections with line ranges to read with \`read_document\`. Use \`search_documents\` to list or filter documents.
 - Read a document before changing it. Use line ranges for large documents.
 - Prefer \`edit_document\`, which replaces exact, unique existing text and rejects missing or ambiguous matches. Its changes appear live for anyone editing in the browser. Re-read and retry after a revision conflict.
 - Use \`replace_document_body\` only when the user explicitly wants a full-body replacement.
@@ -1020,6 +1051,7 @@ function operationCategory(pathname: string): string {
   if (pathname.includes("/publish")) return "publication";
   if (pathname.includes("/auth/")) return "authentication";
   if (pathname.includes("/admin/")) return "administration";
+  if (pathname === "/api/search") return "search";
   if (pathname.includes("/documents")) return "document";
   if (pathname.includes("/rfc/") || pathname.includes("/rfcs/")) return "public-rfc";
   return "http";
@@ -1243,10 +1275,11 @@ function errorResponse(context: HonoContext, error: ApplicationError): Response 
 
 function optionalPositiveInteger(
   value: string | undefined,
+  label = "line number",
 ): Effect.Effect<number | undefined, ApplicationError> {
   return value === undefined
     ? Effect.succeed(undefined)
-    : positiveInteger(value, "line number").pipe(Effect.map((number) => number));
+    : positiveInteger(value, label).pipe(Effect.map((number) => number));
 }
 
 function positiveInteger(value: string, label: string): Effect.Effect<number, ApplicationError> {

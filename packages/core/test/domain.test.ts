@@ -23,6 +23,7 @@ import {
   documentTrashExpiresAt,
   emptyCommentState,
   encodeBase62,
+  filterCatalog,
   IdGenerator,
   isDocumentTrashExpired,
   markDeleted,
@@ -69,7 +70,6 @@ function catalogSummary(metadata: DocumentMetadata, body: string): CatalogSummar
     excerpt: normalizeSearchText(body).slice(0, 240),
     labels: metadata.labels,
     metadata,
-    normalizedBody: normalizeSearchText(body),
     publishedRevision: metadata.publishedRevision,
     revision: metadata.headRevision,
     reviewers: metadata.reviewers,
@@ -667,9 +667,24 @@ test("catalog search covers full bodies and Gmail-style metadata filters", async
       { field: "state", negated: true, value: "abandoned" },
     ],
   });
-  const fullText = searchCatalog(state, '"durable checkpoint"');
+  assert.deepEqual(searchCatalog(state, '"durable checkpoint"'), []);
+  const fullText = searchCatalog(state, '"durable checkpoint"', {
+    bodyMatches: new Map([["durable checkpoint", new Set([rfcMetadata.id])]]),
+  });
   assert.equal(fullText[0]?.documentId, rfcMetadata.id);
-  assert.match(fullText[0]?.excerpt ?? "", /durable checkpoint/u);
+  assert.deepEqual(
+    searchCatalog(state, "-budget", {
+      bodyMatches: new Map([["budget", new Set([noteMetadata.id])]]),
+    }).map((summary) => summary.documentId),
+    [rfcMetadata.id],
+  );
+  assert.deepEqual(
+    filterCatalog(state, parseCatalogSearchQuery("durable label:platform -is:confidential")).map(
+      (summary) => summary.documentId,
+    ),
+    [rfcMetadata.id],
+  );
+  assert.equal(normalizeSearchText("Naïve Café"), "naive cafe");
   assert.equal(
     searchCatalog(state, "label:platform -is:confidential")[0]?.documentId,
     rfcMetadata.id,

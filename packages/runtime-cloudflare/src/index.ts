@@ -6,6 +6,7 @@ import {
   documentTrashRetentionMilliseconds,
   DurableDocumentJournal,
   ObjectStore,
+  SearchIndex,
   WorkspaceStateStore,
 } from "@earendil-works/inkling-core";
 import type {
@@ -20,6 +21,7 @@ import {
   createBackendApp,
   decodeThemeJson,
   DigestLive,
+  DisabledSearchIndexLive,
   findBundledTheme,
   isDefaultThemeSelection,
   finishGoogleAuthentication,
@@ -28,6 +30,7 @@ import {
   isOAuthPath,
   InklingApplication,
   localApplicationLayer,
+  makeSqlSearchIndex,
   mcpEndpointPath,
   rfcRedirectLocation,
   SecretHasherLive,
@@ -62,12 +65,21 @@ import type {
 import { MarkdownRendererLive } from "@earendil-works/inkling-renderer";
 
 import {
+  defaultEmbeddingModel,
+  makeDurableObjectSearchDatabase,
+  makeVectorizeStore,
+  makeWorkersAiEmbedder,
+} from "./search.ts";
+import {
   makeDurableObjectJournal,
   makeDurableWorkspaceStateStore,
   makeR2ObjectStore,
+  WebCryptoDigest,
 } from "./storage.ts";
 
 export interface CloudflareEnvironment {
+  /** Workers AI; with INKLING_VECTORS it enables semantic search. */
+  readonly AI?: Ai | undefined;
   readonly ASSETS: Fetcher;
   readonly GOOGLE_ADMIN_EMAILS?: string | undefined;
   readonly GOOGLE_ALLOWED_DOMAIN?: string | undefined;
@@ -82,7 +94,11 @@ export interface CloudflareEnvironment {
   readonly INKLING_OAUTH_STATE_SECRET?: string | undefined;
   readonly INKLING_THEME?: string | undefined;
   readonly INKLING_DOCUMENTS: DurableObjectNamespace<DocumentDurableObject>;
+  /** Workers AI text embedding model; the Vectorize index must match its dimensions. */
+  readonly INKLING_EMBEDDING_MODEL?: string | undefined;
   readonly INKLING_OBJECTS: R2Bucket;
+  /** Vectorize index for semantic search, created with the cosine metric. */
+  readonly INKLING_VECTORS?: Vectorize | undefined;
   readonly INKLING_WORKSPACE: DurableObjectNamespace<WorkspaceDurableObject>;
 }
 
@@ -115,10 +131,15 @@ export class WorkspaceDurableObject extends DurableObject<CloudflareEnvironment>
   constructor(state: DurableObjectState, environment: CloudflareEnvironment) {
     super(state, environment);
     this.#state = state;
-    this.#runtime = createApplicationRuntime(state, environment, {
-      ownsDocumentPrivateState: false,
-      workspaceId: state.id.toString(),
-    });
+    this.#runtime = createApplicationRuntime(
+      state,
+      environment,
+      {
+        ownsDocumentPrivateState: false,
+        workspaceId: state.id.toString(),
+      },
+      "workspace",
+    );
     this.#app = createBackendApp({ runtime: this.#runtime, version: "cloudflare" });
     state.blockConcurrencyWhile(() => this.#runtime.runtime().then(() => undefined));
   }
@@ -135,6 +156,22 @@ export class WorkspaceDurableObject extends DurableObject<CloudflareEnvironment>
     await this.#runtime.runPromise(
       Effect.flatMap(InklingApplication, (application) => application.checkpointAll()),
     );
+    if (!semanticSearchConfigured(this.env)) return;
+    const pending = await this.#runtime.runPromise(
+      Effect.flatMap(InklingApplication, (application) => application.refreshSearchIndex()).pipe(
+        Effect.tapError((error) => Effect.logError("Search embedding failed", error.message)),
+        Effect.orElseSucceed(() => -1),
+      ),
+    );
+    if (pending !== 0) await this.#scheduleSearchRefresh(pending > 0 ? 5_000 : 60_000);
+  }
+
+  /** Embedding runs from the alarm so passages are embedded once edits settle. */
+  async #scheduleSearchRefresh(delay: number): Promise<void> {
+    if (!semanticSearchConfigured(this.env)) return;
+    const at = Date.now() + delay;
+    const current = await this.#state.storage.getAlarm();
+    if (current === null || current > at) await this.#state.storage.setAlarm(at);
   }
 
   async loginIdentity(
@@ -211,12 +248,14 @@ export class WorkspaceDurableObject extends DurableObject<CloudflareEnvironment>
   }
 
   async applyProjection(document: DocumentResponse): Promise<RpcResult<boolean>> {
-    return runRpc(
+    const result = await runRpc(
       this.#runtime,
       Effect.flatMap(InklingApplication, (application) =>
         application.applyDocumentProjection(document).pipe(Effect.as(true)),
       ),
     );
+    if (result.ok) await this.#scheduleSearchRefresh(12_000);
+    return result;
   }
 
   async markDeleted(document: DocumentResponse): Promise<RpcResult<boolean>> {
@@ -510,11 +549,16 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
     ) => callRpc(workspaceStub(this.#environment).authorize(requestCredentials, documentId));
     const peopleResolver: NonNullable<LocalApplicationOptions["peopleResolver"]> = (emails) =>
       callRpc(workspaceStub(this.#environment).resolvePeople(emails));
-    const runtime = createApplicationRuntime(this.#state, this.#environment, {
-      peopleResolver,
-      principalResolver: resolver,
-      workspaceId: configuration.workspaceId,
-    });
+    const runtime = createApplicationRuntime(
+      this.#state,
+      this.#environment,
+      {
+        peopleResolver,
+        principalResolver: resolver,
+        workspaceId: configuration.workspaceId,
+      },
+      "disabled",
+    );
     await runtime.runtime();
     this.#configuration = configuration;
     this.#runtime = runtime;
@@ -922,7 +966,11 @@ async function route(request: Request, environment: CloudflareEnvironment): Prom
     return dispatchDocument(request, environment, resolution.value.documentId, resolution.value);
   }
   if (isApplicationPath(url.pathname)) {
-    if (url.pathname === "/api/admin/backup") {
+    if (url.pathname === "/api/admin/backup" || url.pathname === "/api/admin/search/rebuild") {
+      if (request.method === "POST") {
+        const protectionError = mutationProtectionError(request);
+        if (protectionError !== undefined) return protocolErrorResponse(protectionError);
+      }
       const authorized = await workspaceStub(environment).authorize(credentials(request));
       if (!authorized.ok) return protocolErrorResponse(authorized.error);
       if (
@@ -1035,11 +1083,15 @@ function createApplicationRuntime(
   state: DurableObjectState,
   environment: CloudflareEnvironment,
   options: LocalApplicationOptions,
+  search: "disabled" | "workspace",
 ): ManagedRuntimeType.ManagedRuntime<InklingApplicationService, never> {
   const storage = Layer.mergeAll(
     Layer.succeed(WorkspaceStateStore, makeDurableWorkspaceStateStore(state.storage)),
     Layer.succeed(ObjectStore, makeR2ObjectStore(environment.INKLING_OBJECTS)),
     Layer.succeed(DurableDocumentJournal, makeDurableObjectJournal(state.storage)),
+    search === "workspace"
+      ? workspaceSearchIndexLayer(state, environment)
+      : DisabledSearchIndexLive,
   );
   const dependencies = Layer.mergeAll(
     storage,
@@ -1051,6 +1103,33 @@ function createApplicationRuntime(
   );
   const application = localApplicationLayer(options).pipe(Layer.provide(dependencies), Layer.orDie);
   return ManagedRuntime.make(application);
+}
+
+/** Search lives in the workspace authority, which already receives every projection. */
+function workspaceSearchIndexLayer(state: DurableObjectState, environment: CloudflareEnvironment) {
+  const ai = environment.AI;
+  const vectors = environment.INKLING_VECTORS;
+  return Layer.effect(
+    SearchIndex,
+    makeSqlSearchIndex({
+      database: makeDurableObjectSearchDatabase(state.storage),
+      digest: WebCryptoDigest,
+      semantic:
+        ai === undefined || vectors === undefined
+          ? undefined
+          : {
+              embedder: makeWorkersAiEmbedder(
+                ai,
+                environment.INKLING_EMBEDDING_MODEL?.trim() || defaultEmbeddingModel,
+              ),
+              vectors: makeVectorizeStore(vectors),
+            },
+    }),
+  );
+}
+
+function semanticSearchConfigured(environment: CloudflareEnvironment): boolean {
+  return environment.AI !== undefined && environment.INKLING_VECTORS !== undefined;
 }
 
 function isolatedWorkspaceState(configuration: DocumentRuntimeConfiguration): unknown {

@@ -1,6 +1,7 @@
 import { Context, Data, type Effect } from "effect";
 
 import type { DocumentId, DocumentRevision } from "../domain/document.ts";
+import type { SearchVariant } from "../domain/search.ts";
 import type { IdentifierTag } from "./identifiers.ts";
 
 export class StorageError extends Data.TaggedError("StorageError")<{
@@ -124,4 +125,141 @@ export interface SecureTokenService {
 
 export const SecureToken = Context.GenericTag<SecureTokenService>(
   "@earendil-works/inkling/SecureToken",
+);
+
+export type SqlValue = string | number | null | Uint8Array;
+
+export type SqlRow = Readonly<Record<string, SqlValue>>;
+
+export interface SqlStatement {
+  readonly sql: string;
+  readonly params?: readonly SqlValue[] | undefined;
+}
+
+/** A local SQLite database with FTS5 and JSON1, owned by one search index. */
+export interface SearchDatabaseService {
+  readonly query: (
+    sql: string,
+    params?: readonly SqlValue[],
+  ) => Effect.Effect<readonly SqlRow[], StorageError>;
+  /** Runs every statement in one transaction. */
+  readonly batch: (statements: readonly SqlStatement[]) => Effect.Effect<void, StorageError>;
+}
+
+export type EmbeddingPurpose = "document" | "query";
+
+/** Turns text into vectors. Vectors from different models are never compared. */
+export interface EmbedderService {
+  /** Stable identifier of the model and its configuration. */
+  readonly model: string;
+  readonly maxBatchSize: number;
+  readonly embed: (
+    texts: readonly string[],
+    purpose: EmbeddingPurpose,
+  ) => Effect.Effect<readonly Float32Array[], StorageError>;
+}
+
+export interface VectorRecord {
+  readonly id: string;
+  readonly values: Float32Array;
+}
+
+export interface VectorMatch {
+  readonly id: string;
+  readonly score: number;
+}
+
+/** Nearest-neighbour storage keyed by opaque vector identifiers. */
+export interface VectorStoreService {
+  readonly upsert: (vectors: readonly VectorRecord[]) => Effect.Effect<void, StorageError>;
+  readonly delete: (ids: readonly string[]) => Effect.Effect<void, StorageError>;
+  readonly query: (
+    vector: Float32Array,
+    topK: number,
+  ) => Effect.Effect<readonly VectorMatch[], StorageError>;
+}
+
+export interface SearchDocumentInput {
+  readonly documentId: DocumentId;
+  readonly variant: SearchVariant;
+  readonly revision: DocumentRevision;
+  readonly title: string;
+  readonly body: string;
+}
+
+/** Normalized phrases; `all` requires every phrase in a document, `any` ranks by relevance. */
+export interface KeywordQuery {
+  readonly phrases: readonly string[];
+  readonly match: "all" | "any";
+}
+
+export interface PassageSearchRequest {
+  readonly variant: SearchVariant;
+  readonly keyword?: KeywordQuery | undefined;
+  readonly semantic?: string | undefined;
+  /** Restricts results to these documents; omitted means every indexed document. */
+  readonly documentIds?: readonly DocumentId[] | undefined;
+  readonly limit: number;
+  readonly perDocumentLimit: number;
+}
+
+export type PassageMatchKind = "keyword" | "semantic";
+
+export interface SearchPassage {
+  readonly documentId: DocumentId;
+  readonly variant: SearchVariant;
+  readonly revision: DocumentRevision;
+  readonly title: string;
+  readonly headingPath: readonly string[];
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly snippet: string;
+  readonly score: number;
+  readonly matchedBy: readonly PassageMatchKind[];
+}
+
+export interface SearchRefreshResult {
+  readonly embedded: number;
+  readonly pending: number;
+}
+
+/**
+ * Rebuildable full-text and semantic projection of document bodies. Results
+ * are candidates only: callers authorize every document before surfacing it.
+ */
+export interface SearchIndexService {
+  /** False for authorities that never answer queries; callers may skip preparing input. */
+  readonly enabled: boolean;
+  readonly semantic: boolean;
+  /** Replaces a document variant unless a newer revision is already indexed. */
+  readonly indexDocument: (input: SearchDocumentInput) => Effect.Effect<void, StorageError>;
+  readonly removeDocument: (
+    documentId: DocumentId,
+    variant?: SearchVariant,
+  ) => Effect.Effect<void, StorageError>;
+  readonly indexedRevision: (
+    documentId: DocumentId,
+    variant: SearchVariant,
+  ) => Effect.Effect<DocumentRevision | undefined, StorageError>;
+  /** Documents whose headings or body match the query. */
+  readonly matchDocuments: (
+    query: KeywordQuery,
+    variant: SearchVariant,
+  ) => Effect.Effect<ReadonlySet<DocumentId>, StorageError>;
+  /** Best matching body excerpt for each listed document. */
+  readonly excerpts: (
+    query: KeywordQuery,
+    variant: SearchVariant,
+    documentIds: readonly DocumentId[],
+  ) => Effect.Effect<ReadonlyMap<DocumentId, string>, StorageError>;
+  readonly searchPassages: (
+    request: PassageSearchRequest,
+  ) => Effect.Effect<readonly SearchPassage[], StorageError>;
+  /** Embeds passages that have been stable since `quietBefore` and drops unused vectors. */
+  readonly refresh: (quietBefore: number) => Effect.Effect<SearchRefreshResult, StorageError>;
+  readonly clear: Effect.Effect<void, StorageError>;
+}
+
+export const SearchIndex = Context.GenericTag<SearchIndexService>(
+  "@earendil-works/inkling/SearchIndex",
 );
