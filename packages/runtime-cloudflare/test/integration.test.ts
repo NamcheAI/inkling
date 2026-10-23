@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
@@ -157,6 +157,30 @@ test(
         Buffer.from(String(acceptedLiveUpdate["update"]), "base64"),
       );
       assert.equal(collaborationDocument.getText("body").toString(), changed.body);
+      // Typed updates reach the catalog through the throttled projection,
+      // not one projection per keystroke.
+      await typeTitle(
+        collaborationSocket.socket,
+        collaborationDocument,
+        "Cloudflare first",
+        "Typed",
+      );
+      await waitForCatalog(running.baseUrl, authorization, first.metadata.id, "Typed", 0, 200);
+      await typeTitle(
+        collaborationSocket.socket,
+        collaborationDocument,
+        "Typed",
+        "Cloudflare first",
+      );
+      await waitForCatalog(
+        running.baseUrl,
+        authorization,
+        first.metadata.id,
+        "Cloudflare first",
+        0,
+        200,
+      );
+      changed = await readDocument(running.baseUrl, first.metadata.id, authorization);
       collaborationSocket.socket.close();
       collaborationDocument.destroy();
       assert.match(
@@ -633,6 +657,34 @@ async function connectWebSocket(
   return { socket, welcomeStateUpdate: String(welcome["stateUpdate"]) };
 }
 
+async function typeTitle(
+  socket: WebSocket,
+  document: Y.Doc,
+  oldTitle: string,
+  title: string,
+): Promise<void> {
+  const body = document.getText("body");
+  const start = body.toString().indexOf(`# ${oldTitle}`) + 2;
+  assert.ok(start >= 2);
+  const update = new Promise<Uint8Array>((resolve) => document.once("update", resolve));
+  document.transact(() => {
+    body.delete(start, oldTitle.length);
+    body.insert(start, title);
+  });
+  const clientUpdateId = `cu_${randomUUID().replaceAll("-", "")}`;
+  const accepted = nextSocketMessage(socket);
+  socket.send(
+    JSON.stringify({
+      clientUpdateId,
+      type: "body-update",
+      update: Buffer.from(await update).toString("base64"),
+    }),
+  );
+  const message = await accepted;
+  assert.equal(message["type"], "update-accepted");
+  assert.equal(message["clientUpdateId"], clientUpdateId);
+}
+
 function nextSocketMessage(socket: WebSocket): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     socket.once("message", (data) => {
@@ -719,6 +771,7 @@ async function waitForCatalog(
   documentId: string,
   title: string,
   attempt = 0,
+  attempts = 100,
 ): Promise<void> {
   const response = await fetch(`${baseUrl}/api/documents`, { headers });
   const catalog = (await response.json()) as {
@@ -731,13 +784,13 @@ async function waitForCatalog(
   ) {
     return;
   }
-  if (attempt >= 99) {
+  if (attempt >= attempts - 1) {
     assert.fail(
       `The latest document projection did not reach the workspace authority: ${JSON.stringify(catalog.documents)}`,
     );
   }
   await delay(25);
-  return waitForCatalog(baseUrl, headers, documentId, title, attempt + 1);
+  return waitForCatalog(baseUrl, headers, documentId, title, attempt + 1, attempts);
 }
 
 async function loginWithGoogle(baseUrl: string, returnTo = "/"): Promise<string> {

@@ -82,6 +82,8 @@ export type {
   ApiKeyRecord,
   AuthenticationState,
   AuthorizationCodeRecord,
+  AuthenticatedApiKey,
+  AuthenticatedSession,
   AuthorizationGrant,
   CreatedApiKey,
   CreatedAuthorizationCode,
@@ -171,6 +173,7 @@ export type {
   SecretHasherService,
   SecureTokenService,
   StoredObject,
+  TokenHasherService,
   WorkspaceStateStoreService,
 } from "./application/ports.ts";
 export {
@@ -182,5 +185,6 @@ export {
   SecretHasher,
   SecureToken,
   StorageError,
+  TokenHasher,
   WorkspaceStateStore,
 } from "./application/ports.ts";

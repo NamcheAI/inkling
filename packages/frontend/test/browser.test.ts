@@ -461,15 +461,18 @@ test(
           .textContent(),
         "platform",
       );
-      await first.waitForFunction(async () => {
-        const response = await fetch(`/api/documents?q=${encodeURIComponent("label:platform")}`);
-        const catalog = (await response.json()) as {
-          documents: readonly { metadata: { title: string } }[];
-        };
-        return catalog.documents.some(
-          (document) => document.metadata.title === "Browser collaboration",
-        );
-      });
+      // Typed edits reach the catalog through a throttled projection.
+      await waitUntil(() =>
+        first.evaluate(async () => {
+          const response = await fetch(`/api/documents?q=${encodeURIComponent("label:platform")}`);
+          const catalog = (await response.json()) as {
+            documents: readonly { metadata: { title: string } }[];
+          };
+          return catalog.documents.some(
+            (document) => document.metadata.title === "Browser collaboration",
+          );
+        }),
+      );
       await first.getByRole("link", { name: "Inkling home" }).click();
       await first.waitForSelector("[data-document-search]");
       assert.equal(await first.title(), "Inkling");
@@ -1788,4 +1791,12 @@ async function waitForServer(baseUrl: string, attempt = 0): Promise<void> {
   if (attempt >= 99) assert.fail("The browser test server did not start.");
   await new Promise((resolve) => setTimeout(resolve, 50));
   return waitForServer(baseUrl, attempt + 1);
+}
+
+/** Polls a condition that needs Node-side awaiting, such as a fetch made in the page. */
+async function waitUntil(condition: () => Promise<boolean>, attempt = 0): Promise<void> {
+  if (await condition()) return;
+  if (attempt >= 199) assert.fail("The awaited condition never held.");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return waitUntil(condition, attempt + 1);
 }

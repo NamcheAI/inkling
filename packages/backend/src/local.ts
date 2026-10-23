@@ -44,6 +44,7 @@ import {
   isDocumentTrashExpired,
   SecretHasher,
   SecureToken,
+  TokenHasher,
   StorageError,
   takeAuthorizationCode,
   tombstoneDocument,
@@ -122,6 +123,10 @@ import {
 
 const textEncoder = new TextEncoder();
 const maximumCachedPublishedRevisions = 128;
+/** How long the catalog may settle before its object storage projections are written. */
+const catalogProjectionDelayMilliseconds = 2_000;
+/** Collaboration updates refresh a document's catalog entry and search at most this often. */
+const documentProjectionIntervalMilliseconds = 2_000;
 const textDecoder = new TextDecoder();
 
 interface CapabilityRecord {
@@ -206,6 +211,8 @@ const persistedStateSchema = Schema.Struct({
 export interface LocalApplicationOptions {
   readonly workspaceId?: string | undefined;
   readonly ownsDocumentPrivateState?: boolean | undefined;
+  /** Whether this runtime writes the workspace catalog projections; document authorities do not. */
+  readonly ownsCatalogProjections?: boolean | undefined;
   readonly principalResolver?:
     | ((
         credentials: RequestCredentials,
@@ -227,6 +234,7 @@ export function makeLocalInklingApplication(
   | typeof DurableDocumentJournal.Service
   | typeof Digest.Service
   | typeof SecretHasher.Service
+  | typeof TokenHasher.Service
   | typeof SecureToken.Service
   | typeof IdGenerator.Service
   | typeof MarkdownRenderer.Service
@@ -238,6 +246,7 @@ export function makeLocalInklingApplication(
     const journal = yield* DurableDocumentJournal;
     const digest = yield* Digest;
     const hasher = yield* SecretHasher;
+    const tokenHasher = yield* TokenHasher;
     const tokens = yield* SecureToken;
     const ids = yield* IdGenerator;
     const renderer = yield* MarkdownRenderer;
@@ -256,10 +265,47 @@ export function makeLocalInklingApplication(
       role: "administrator",
     };
 
+    // The catalog files in object storage are projections kept for backups.
+    // They are written once the catalog settles rather than on every save,
+    // and only by the runtime that owns the workspace catalog.
+    const catalogProjectionMutex = yield* Effect.makeSemaphore(1);
+    let persistedCatalog: WorkspaceCatalogState | undefined;
+    let catalogProjectionFiber: Fiber.RuntimeFiber<void, never> | undefined;
+
+    const flushCatalogProjections: Effect.Effect<void> = catalogProjectionMutex.withPermits(1)(
+      Effect.suspend(() => {
+        const current = state;
+        if (options.ownsCatalogProjections === false || current.catalog === persistedCatalog) {
+          return Effect.void;
+        }
+        return persistCatalogProjections(current, objectStore, digest).pipe(
+          Effect.tap(() => Effect.sync(() => (persistedCatalog = current.catalog))),
+          Effect.catchAll((error) =>
+            Effect.logWarning("Catalog projection write failed", error.message),
+          ),
+        );
+      }),
+    );
+
+    const scheduleCatalogProjections: Effect.Effect<void> = Effect.suspend(() => {
+      if (options.ownsCatalogProjections === false || catalogProjectionFiber !== undefined) {
+        return Effect.void;
+      }
+      return Effect.sleep(catalogProjectionDelayMilliseconds).pipe(
+        // Saves from here on schedule another write, so the last one is never missed.
+        Effect.ensuring(Effect.sync(() => (catalogProjectionFiber = undefined))),
+        Effect.zipRight(flushCatalogProjections),
+        Effect.forkDaemon,
+        Effect.flatMap((fiber) => Effect.sync(() => (catalogProjectionFiber = fiber))),
+      );
+    });
+
     const saveState = (next: LocalWorkspaceState): Effect.Effect<void, StorageError> =>
       stateStore.save(next).pipe(
-        Effect.tap(() => persistCatalogProjections(next, objectStore, digest).pipe(Effect.ignore)),
         Effect.tap(() => Effect.sync(() => (state = next))),
+        Effect.tap(() =>
+          next.catalog === persistedCatalog ? Effect.void : scheduleCatalogProjections,
+        ),
       );
 
     const withState = stateMutex.withPermits(1);
@@ -368,50 +414,107 @@ export function makeLocalInklingApplication(
         checkpointFibers.set(room.documentId, fiber);
       });
 
+    /**
+     * Stores a credential record that authentication refreshed. The record is
+     * merged into the current state so concurrent changes, such as a
+     * revocation or logout, are kept. Failing to record use or to upgrade a
+     * hash never fails the request; the next request tries again.
+     */
+    const storeAuthenticatedRecord = (
+      update:
+        | { readonly apiKey: ApiKeyRecord; readonly session?: undefined }
+        | { readonly apiKey?: undefined; readonly session: SessionRecord },
+    ): Effect.Effect<void> =>
+      withState(
+        Effect.suspend(() => {
+          const { apiKeys, sessions } = state.authentication;
+          let authentication: AuthenticationState | undefined;
+          if (update.apiKey === undefined) {
+            const index = sessions.findIndex((record) => record.id === update.session.id);
+            const current = sessions[index];
+            authentication =
+              current === undefined
+                ? undefined
+                : {
+                    ...state.authentication,
+                    sessions: sessions.with(index, {
+                      ...current,
+                      tokenHash: update.session.tokenHash,
+                    }),
+                  };
+          } else {
+            const index = apiKeys.findIndex((record) => record.id === update.apiKey.id);
+            const current = apiKeys[index];
+            authentication =
+              current === undefined
+                ? undefined
+                : {
+                    ...state.authentication,
+                    apiKeys: apiKeys.with(index, {
+                      ...current,
+                      lastUsedAt: update.apiKey.lastUsedAt,
+                      tokenHash: update.apiKey.tokenHash,
+                    }),
+                  };
+          }
+          return authentication === undefined
+            ? Effect.void
+            : saveState({ ...state, authentication });
+        }),
+      ).pipe(
+        Effect.catchAll((error) =>
+          Effect.logWarning("Authenticated credential update failed", error.message),
+        ),
+      );
+
+    // Authentication only reads the state, so it never waits for the state
+    // lock; only the occasional record refresh takes it.
     const resolveStoredPrincipal = (
       credentials: RequestCredentials,
       targetDocumentId?: string,
     ): Effect.Effect<Principal, ApplicationError> =>
-      withState(
-        Effect.gen(function* () {
-          const now = new Date().toISOString();
-          if (credentials.bearerToken !== undefined) {
-            const authenticated = yield* authenticateApiKey(
-              state.authentication,
-              credentials.bearerToken,
-              now,
-            ).pipe(
-              Effect.provideService(SecretHasher, hasher),
-              Effect.mapError(toApplicationError),
-            );
-            yield* saveState({ ...state, authentication: authenticated.state }).pipe(
-              Effect.mapError(toApplicationError),
-            );
-            return authenticated.principal;
+      Effect.gen(function* () {
+        const now = new Date().toISOString();
+        if (credentials.bearerToken !== undefined) {
+          const authenticated = yield* authenticateApiKey(
+            state.authentication,
+            credentials.bearerToken,
+            now,
+          ).pipe(
+            Effect.provideService(TokenHasher, tokenHasher),
+            Effect.mapError(toApplicationError),
+          );
+          if (authenticated.updatedRecord !== undefined) {
+            yield* storeAuthenticatedRecord({ apiKey: authenticated.updatedRecord });
           }
-          if (credentials.sessionToken !== undefined) {
-            return yield* authenticateSession(
-              state.authentication,
-              credentials.sessionToken,
-              now,
-            ).pipe(
-              Effect.provideService(SecretHasher, hasher),
-              Effect.mapError(toApplicationError),
-            );
+          return authenticated.principal;
+        }
+        if (credentials.sessionToken !== undefined) {
+          const authenticated = yield* authenticateSession(
+            state.authentication,
+            credentials.sessionToken,
+            now,
+          ).pipe(
+            Effect.provideService(TokenHasher, tokenHasher),
+            Effect.mapError(toApplicationError),
+          );
+          if (authenticated.updatedRecord !== undefined) {
+            yield* storeAuthenticatedRecord({ session: authenticated.updatedRecord });
           }
-          if (credentials.capabilityToken !== undefined && targetDocumentId !== undefined) {
-            return yield* resolveCapability(
-              state,
-              credentials.capabilityToken,
-              targetDocumentId,
-              credentials.guestName,
-              credentials.capabilityProof,
-              hasher,
-            );
-          }
-          return { kind: "anonymous" } as const;
-        }),
-      );
+          return authenticated.principal;
+        }
+        if (credentials.capabilityToken !== undefined && targetDocumentId !== undefined) {
+          return yield* resolveCapability(
+            state,
+            credentials.capabilityToken,
+            targetDocumentId,
+            credentials.guestName,
+            credentials.capabilityProof,
+            tokenHasher,
+          );
+        }
+        return { kind: "anonymous" } as const;
+      });
 
     const resolvePrincipal = (
       credentials: RequestCredentials,
@@ -606,11 +709,62 @@ export function makeLocalInklingApplication(
         yield* updateSearchIndex(toDocumentResponse(snapshot));
       });
 
+    const projectionFibers = new Map<string, Fiber.RuntimeFiber<void, never>>();
+
+    /**
+     * Projects a document after collaboration updates. Keystrokes arrive far
+     * more often than anyone reads the catalog, so updates within one
+     * interval share a single projection taken when the interval ends.
+     */
+    const scheduleProjection = (room: DocumentAuthorityService): Effect.Effect<void> =>
+      Effect.suspend(() => {
+        if (projectionFibers.has(room.documentId)) return Effect.void;
+        return Effect.sleep(documentProjectionIntervalMilliseconds).pipe(
+          // Updates from here on schedule another projection, so the last
+          // update is always covered by a snapshot taken after it.
+          Effect.ensuring(Effect.sync(() => projectionFibers.delete(room.documentId))),
+          Effect.zipRight(projectDocument(room)),
+          Effect.catchAll((error) => Effect.logError("Document projection failed", error.message)),
+          Effect.forkDaemon,
+          Effect.flatMap((fiber) =>
+            Effect.sync(() => {
+              projectionFibers.set(room.documentId, fiber);
+            }),
+          ),
+        );
+      });
+
+    /**
+     * Brings throttled projections up to date before a catalog read in the
+     * same process, so readers here never see an entry older than its
+     * document. Document authorities in other processes stay on the throttle.
+     */
+    const flushPendingProjections: Effect.Effect<void> = Effect.suspend(() =>
+      Effect.forEach(
+        [...projectionFibers],
+        ([id, fiber]) =>
+          Effect.gen(function* () {
+            projectionFibers.delete(id);
+            yield* Fiber.interrupt(fiber);
+            const room = rooms.get(id);
+            if (room === undefined) return;
+            yield* projectDocument(room).pipe(
+              Effect.catchAll((error) =>
+                Effect.logError("Document projection failed", error.message),
+              ),
+            );
+          }),
+        { discard: true },
+      ),
+    );
+
     const releaseDocumentRoom = (rawDocumentId: string): Effect.Effect<void> =>
       Effect.gen(function* () {
         const room = rooms.get(rawDocumentId);
         const checkpointFiber = checkpointFibers.get(rawDocumentId);
         if (checkpointFiber !== undefined) yield* Fiber.interrupt(checkpointFiber);
+        const projectionFiber = projectionFibers.get(rawDocumentId);
+        if (projectionFiber !== undefined) yield* Fiber.interrupt(projectionFiber);
         if (room !== undefined) yield* room.close;
         checkpointFibers.delete(rawDocumentId);
         dirtySince.delete(rawDocumentId);
@@ -1345,7 +1499,7 @@ export function makeLocalInklingApplication(
       checkpointAll: () =>
         Effect.forEach(rooms.values(), (room) =>
           room.checkpoint(new Date().toISOString()).pipe(Effect.mapError(toApplicationError)),
-        ).pipe(Effect.asVoid),
+        ).pipe(Effect.zipRight(flushCatalogProjections)),
       connectCollaboration: (credentials, rawDocumentId, stateVector) =>
         Effect.gen(function* () {
           const room = yield* getRoom(rawDocumentId);
@@ -1398,7 +1552,7 @@ export function makeLocalInklingApplication(
                 .pipe(
                   Effect.mapError(toApplicationError),
                   Effect.tap(() => scheduleCheckpoint(room)),
-                  Effect.tap(() => projectDocument(room).pipe(Effect.ignore, Effect.forkDaemon)),
+                  Effect.tap(() => scheduleProjection(room)),
                   Effect.map((accepted): ServerCollaborationMessage => ({
                     clientUpdateId: accepted.clientUpdateId,
                     documentRevision: accepted.revision,
@@ -1448,7 +1602,7 @@ export function makeLocalInklingApplication(
           return yield* withState(
             createApiKey(state.authentication, account, label, new Date().toISOString()).pipe(
               Effect.provideService(IdGenerator, ids),
-              Effect.provideService(SecretHasher, hasher),
+              Effect.provideService(TokenHasher, tokenHasher),
               Effect.provideService(SecureToken, tokens),
               Effect.mapError(toApplicationError),
               Effect.flatMap((created) =>
@@ -1482,7 +1636,7 @@ export function makeLocalInklingApplication(
               new Date().toISOString(),
             ).pipe(
               Effect.provideService(IdGenerator, ids),
-              Effect.provideService(SecretHasher, hasher),
+              Effect.provideService(TokenHasher, tokenHasher),
               Effect.provideService(SecureToken, tokens),
               Effect.mapError(toApplicationError),
               Effect.flatMap((created) =>
@@ -1511,7 +1665,7 @@ export function makeLocalInklingApplication(
             }
             const record: AuthorizationCodeRecord = taken.record;
             const identity = yield* verifyAuthorizationCode(record, taken.secret, grant, now).pipe(
-              Effect.provideService(SecretHasher, hasher),
+              Effect.provideService(TokenHasher, tokenHasher),
               Effect.mapError(toApplicationError),
             );
             const created = yield* createApiKey(
@@ -1522,7 +1676,7 @@ export function makeLocalInklingApplication(
               { oauthClientName: record.clientName },
             ).pipe(
               Effect.provideService(IdGenerator, ids),
-              Effect.provideService(SecretHasher, hasher),
+              Effect.provideService(TokenHasher, tokenHasher),
               Effect.provideService(SecureToken, tokens),
               Effect.mapError(toApplicationError),
             );
@@ -1971,6 +2125,7 @@ export function makeLocalInklingApplication(
         }),
       listPublicDocuments: (query, lifecycleState, label) =>
         Effect.gen(function* () {
+          yield* flushPendingProjections;
           const normalizedQuery = normalizeSearchText(query);
           const bodyMatches =
             normalizedQuery.length === 0
@@ -2032,6 +2187,7 @@ export function makeLocalInklingApplication(
         }),
       listDocuments: (credentials, query) =>
         Effect.gen(function* () {
+          yield* flushPendingProjections;
           const principal = yield* resolvePrincipal(credentials);
           yield* authorizeWorkspace(principal, "read-catalog").pipe(
             Effect.mapError(toApplicationError),
@@ -2105,6 +2261,7 @@ export function makeLocalInklingApplication(
         }),
       searchPassages: (credentials, query, limit) =>
         Effect.gen(function* () {
+          yield* flushPendingProjections;
           const principal = yield* resolvePrincipal(credentials);
           yield* authorizeWorkspace(principal, "read-catalog").pipe(
             Effect.mapError(toApplicationError),
@@ -2198,6 +2355,7 @@ export function makeLocalInklingApplication(
         ),
       listDeletedDocuments: (credentials) =>
         Effect.gen(function* () {
+          yield* flushPendingProjections;
           const principal = yield* resolvePrincipal(credentials);
           yield* requireAdministrator(principal);
           const summaries = searchCatalog(state.catalog, "", {
@@ -2227,7 +2385,7 @@ export function makeLocalInklingApplication(
         withState(
           createWorkspaceSession(state.authentication, identity, new Date().toISOString()).pipe(
             Effect.provideService(IdGenerator, ids),
-            Effect.provideService(SecretHasher, hasher),
+            Effect.provideService(TokenHasher, tokenHasher),
             Effect.provideService(SecureToken, tokens),
             Effect.mapError(toApplicationError),
             Effect.flatMap((created) => {
@@ -2603,7 +2761,9 @@ export function makeLocalInklingApplication(
 
           const id = yield* ids.generate(identifierTag.capability);
           const secret = yield* tokens.generate(32).pipe(Effect.mapError(toApplicationError));
-          const tokenHash = yield* hasher.hash(secret).pipe(Effect.mapError(toApplicationError));
+          const tokenHash = yield* tokenHasher
+            .hash(secret)
+            .pipe(Effect.mapError(toApplicationError));
           const passwordHash =
             request.password === undefined
               ? undefined
@@ -2714,7 +2874,12 @@ export function makeLocalInklingApplication(
                 401,
               );
             }
-            const capability = yield* findCapabilityRecord(state, token, rawDocumentId, hasher);
+            const capability = yield* findCapabilityRecord(
+              state,
+              token,
+              rawDocumentId,
+              tokenHasher,
+            );
             if (capability.passwordHash === undefined || capability.passwordProof === undefined) {
               return yield* applicationFailure(
                 "share_password_not_required",
@@ -2978,10 +3143,10 @@ function resolveCapability(
   targetDocumentId: string,
   guestName: string | undefined,
   capabilityProof: string | undefined,
-  hasher: typeof SecretHasher.Service,
+  tokenHasher: typeof TokenHasher.Service,
 ): Effect.Effect<Principal, ApplicationError> {
   return Effect.gen(function* () {
-    const record = yield* findCapabilityRecord(state, token, targetDocumentId, hasher);
+    const record = yield* findCapabilityRecord(state, token, targetDocumentId, tokenHasher);
     if (
       record.passwordHash !== undefined &&
       (record.passwordProof === undefined || record.passwordProof !== capabilityProof)
@@ -3013,7 +3178,7 @@ function findCapabilityRecord(
   state: LocalWorkspaceState,
   token: string,
   targetDocumentId: string,
-  hasher: typeof SecretHasher.Service,
+  tokenHasher: typeof TokenHasher.Service,
 ): Effect.Effect<CapabilityRecord, ApplicationError> {
   return Effect.gen(function* () {
     const [prefix, documentValue, id, secret, extra] = token.split(".");
@@ -3031,7 +3196,9 @@ function findCapabilityRecord(
     );
     if (
       record === undefined ||
-      !(yield* hasher.verify(secret, record.tokenHash).pipe(Effect.mapError(toApplicationError)))
+      !(yield* tokenHasher
+        .verify(secret, record.tokenHash)
+        .pipe(Effect.mapError(toApplicationError)))
     ) {
       return yield* applicationFailure("invalid_capability", "The capability is invalid.", 401);
     }

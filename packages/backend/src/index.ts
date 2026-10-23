@@ -111,6 +111,7 @@ export {
   SecretHasherLive,
   SecureTokenLive,
   secretHasherLayer,
+  TokenHasherLive,
 } from "./crypto.ts";
 export {
   finishGoogleAuthentication,

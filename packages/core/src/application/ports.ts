@@ -110,13 +110,30 @@ export interface DigestService {
 
 export const Digest = Context.GenericTag<DigestService>("@earendil-works/inkling/Digest");
 
+/** Stretches low-entropy secrets, such as share link passwords, before storing them. */
 export interface SecretHasherService {
   readonly hash: (secret: string) => Effect.Effect<string, StorageError>;
   readonly verify: (secret: string, encodedHash: string) => Effect.Effect<boolean, StorageError>;
 }
 
+/**
+ * Hashes generated high-entropy tokens: sessions, API keys, authorization
+ * codes, and share links. Guessing such a token is infeasible, so a single
+ * digest suffices and verification stays cheap on every request.
+ */
+export interface TokenHasherService {
+  readonly hash: (token: string) => Effect.Effect<string, StorageError>;
+  readonly verify: (token: string, encodedHash: string) => Effect.Effect<boolean, StorageError>;
+  /** Whether a stored hash uses a superseded scheme and should be replaced once verified. */
+  readonly isOutdated: (encodedHash: string) => boolean;
+}
+
 export const SecretHasher = Context.GenericTag<SecretHasherService>(
   "@earendil-works/inkling/SecretHasher",
+);
+
+export const TokenHasher = Context.GenericTag<TokenHasherService>(
+  "@earendil-works/inkling/TokenHasher",
 );
 
 export interface SecureTokenService {

@@ -27,7 +27,13 @@ import type * as FrontendServer from "@earendil-works/inkling-frontend/server";
 import { MarkdownRendererLive } from "@earendil-works/inkling-renderer";
 
 import { localApplicationLayer } from "./application.ts";
-import { DigestLive, IdGeneratorLive, SecretHasherLive, SecureTokenLive } from "./crypto.ts";
+import {
+  DigestLive,
+  IdGeneratorLive,
+  SecretHasherLive,
+  SecureTokenLive,
+  TokenHasherLive,
+} from "./crypto.ts";
 import { acquireDataDirectoryLock, DataDirectoryLockError } from "./lock.ts";
 import { embeddingsFromEnvironment, searchIndexLayer } from "./search.ts";
 import { journalLayer, objectStoreLayer, workspaceStateStoreLayer } from "./storage.ts";
@@ -251,6 +257,7 @@ function createRuntime(
     DigestLive,
     SecureTokenLive,
     SecretHasherLive,
+    TokenHasherLive,
     MarkdownRendererLive,
   );
   const storage = Layer.mergeAll(

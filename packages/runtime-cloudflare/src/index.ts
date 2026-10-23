@@ -35,6 +35,7 @@ import {
   mcpEndpointPath,
   rfcRedirectLocation,
   SecureTokenLive,
+  TokenHasherLive,
   shareProofCookieNameFromToken,
   startGoogleAuthentication,
   themeCssResponse,
@@ -148,9 +149,7 @@ export class WorkspaceDurableObject extends DurableObject<CloudflareEnvironment>
 
   override async fetch(request: Request): Promise<Response> {
     const response = await this.#app.fetch(request);
-    if (isMutation(request) && response.ok) {
-      await this.#state.storage.setAlarm(Date.now() + 2_000);
-    }
+    if (isMutation(request) && response.ok) await this.#scheduleAlarm(2_000);
     return response;
   }
 
@@ -171,19 +170,36 @@ export class WorkspaceDurableObject extends DurableObject<CloudflareEnvironment>
   /** Embedding runs from the alarm so passages are embedded once edits settle. */
   async #scheduleSearchRefresh(delay: number): Promise<void> {
     if (!semanticSearchConfigured(this.env)) return;
+    await this.#scheduleAlarm(delay);
+  }
+
+  /**
+   * Runs the alarm within `delay` without postponing an earlier one. The
+   * alarm checkpoints and writes the catalog projections that changes left
+   * pending.
+   */
+  async #scheduleAlarm(delay: number): Promise<void> {
     const at = Date.now() + delay;
     const current = await this.#state.storage.getAlarm();
     if (current === null || current > at) await this.#state.storage.setAlarm(at);
+  }
+
+  /** Catalog changes from document authorities are written to object storage by the alarm. */
+  async #afterCatalogChange<A>(result: RpcResult<A>): Promise<RpcResult<A>> {
+    if (result.ok) await this.#scheduleAlarm(2_000);
+    return result;
   }
 
   async loginIdentity(
     identity: WorkspaceIdentity,
     people: readonly PeopleDirectoryEntry[] = [],
   ): Promise<RpcResult<SessionResult>> {
-    return runRpc(
-      this.#runtime,
-      Effect.flatMap(InklingApplication, (application) =>
-        application.loginWorkspaceIdentity(identity, people),
+    return this.#afterCatalogChange(
+      await runRpc(
+        this.#runtime,
+        Effect.flatMap(InklingApplication, (application) =>
+          application.loginWorkspaceIdentity(identity, people),
+        ),
       ),
     );
   }
@@ -241,10 +257,12 @@ export class WorkspaceDurableObject extends DurableObject<CloudflareEnvironment>
     requestCredentials: RequestCredentials,
     documentId: string,
   ): Promise<RpcResult<number>> {
-    return runRpc(
-      this.#runtime,
-      Effect.flatMap(InklingApplication, (application) =>
-        application.reserveRfcNumber(requestCredentials, documentId),
+    return this.#afterCatalogChange(
+      await runRpc(
+        this.#runtime,
+        Effect.flatMap(InklingApplication, (application) =>
+          application.reserveRfcNumber(requestCredentials, documentId),
+        ),
       ),
     );
   }
@@ -257,32 +275,38 @@ export class WorkspaceDurableObject extends DurableObject<CloudflareEnvironment>
       ),
     );
     if (result.ok) await this.#scheduleSearchRefresh(12_000);
-    return result;
+    return this.#afterCatalogChange(result);
   }
 
   async markDeleted(document: DocumentResponse): Promise<RpcResult<boolean>> {
-    return runRpc(
-      this.#runtime,
-      Effect.flatMap(InklingApplication, (application) =>
-        application.markCatalogDeleted(document).pipe(Effect.as(true)),
+    return this.#afterCatalogChange(
+      await runRpc(
+        this.#runtime,
+        Effect.flatMap(InklingApplication, (application) =>
+          application.markCatalogDeleted(document).pipe(Effect.as(true)),
+        ),
       ),
     );
   }
 
   async markRestored(document: DocumentResponse): Promise<RpcResult<boolean>> {
-    return runRpc(
-      this.#runtime,
-      Effect.flatMap(InklingApplication, (application) =>
-        application.markCatalogRestored(document).pipe(Effect.as(true)),
+    return this.#afterCatalogChange(
+      await runRpc(
+        this.#runtime,
+        Effect.flatMap(InklingApplication, (application) =>
+          application.markCatalogRestored(document).pipe(Effect.as(true)),
+        ),
       ),
     );
   }
 
   async markPurged(documentId: string): Promise<RpcResult<boolean>> {
-    return runRpc(
-      this.#runtime,
-      Effect.flatMap(InklingApplication, (application) =>
-        application.markCatalogPurged(documentId).pipe(Effect.as(true)),
+    return this.#afterCatalogChange(
+      await runRpc(
+        this.#runtime,
+        Effect.flatMap(InklingApplication, (application) =>
+          application.markCatalogPurged(documentId).pipe(Effect.as(true)),
+        ),
       ),
     );
   }
@@ -304,6 +328,13 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
   #runtime: ManagedRuntimeType.ManagedRuntime<InklingApplicationService, never> | undefined;
   #app: ReturnType<typeof createBackendApp> | undefined;
   #configuration: DocumentRuntimeConfiguration | undefined;
+  /** Mirrors the stored `catalog:stale` flag so keystrokes write it only once. */
+  #catalogStale = false;
+  #catalogProjectionTimer: ReturnType<typeof setTimeout> | undefined;
+  readonly #principals = new Map<
+    string,
+    { readonly expiresAt: number; readonly principal: Principal }
+  >();
 
   constructor(state: DurableObjectState, environment: CloudflareEnvironment) {
     super(state, environment);
@@ -480,6 +511,7 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
     await runtime.runPromise(
       Effect.flatMap(InklingApplication, (application) => application.checkpointAll()),
     );
+    await this.#projectStaleCatalog();
     const finalized = await this.#flushCatalogOutbox();
     if (finalized) return;
     const projection = await runtime.runPromise(
@@ -534,13 +566,29 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
     const resolver: NonNullable<LocalApplicationOptions["principalResolver"]> = (
       requestCredentials,
       documentId,
-    ) => callRpc(workspaceStub(this.#environment).authorize(requestCredentials, documentId));
+    ) => {
+      const key = principalCacheKey(requestCredentials, documentId);
+      const cached = key === undefined ? undefined : this.#principals.get(key);
+      if (cached !== undefined && cached.expiresAt > Date.now()) {
+        return Effect.succeed(cached.principal);
+      }
+      return callRpc(
+        workspaceStub(this.#environment).authorize(requestCredentials, documentId),
+      ).pipe(
+        Effect.tap((principal) =>
+          Effect.sync(() => {
+            if (key !== undefined) this.#rememberPrincipal(key, principal);
+          }),
+        ),
+      );
+    };
     const peopleResolver: NonNullable<LocalApplicationOptions["peopleResolver"]> = (emails) =>
       callRpc(workspaceStub(this.#environment).resolvePeople(emails));
     const runtime = createApplicationRuntime(
       this.#state,
       this.#environment,
       {
+        ownsCatalogProjections: false,
         peopleResolver,
         principalResolver: resolver,
         workspaceId: configuration.workspaceId,
@@ -551,6 +599,60 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
     this.#configuration = configuration;
     this.#runtime = runtime;
     this.#app = createBackendApp({ runtime, version: "cloudflare-document" });
+  }
+
+  /**
+   * Keeps principals the workspace resolved for signed-in credentials for a
+   * short while, so reads do not each wait for the workspace. Revoking a
+   * session or key therefore takes up to `principalCacheMilliseconds` to
+   * reach a document that is already open.
+   */
+  #rememberPrincipal(key: string, principal: Principal): void {
+    const now = Date.now();
+    for (const [cachedKey, cached] of this.#principals) {
+      if (cached.expiresAt <= now || this.#principals.size >= maximumCachedPrincipals) {
+        this.#principals.delete(cachedKey);
+      }
+    }
+    this.#principals.set(key, { expiresAt: now + principalCacheMilliseconds, principal });
+  }
+
+  /**
+   * Collaboration updates refresh the catalog projection at most once per
+   * interval. The stored flag lets the alarm finish the refresh when the
+   * authority is evicted before its timer fires.
+   */
+  async #markCatalogStale(): Promise<void> {
+    if (!this.#catalogStale) {
+      await this.#state.storage.put("catalog:stale", true);
+      this.#catalogStale = true;
+    }
+    if (this.#catalogProjectionTimer !== undefined) return;
+    this.#catalogProjectionTimer = setTimeout(() => {
+      this.#catalogProjectionTimer = undefined;
+      this.#projectStaleCatalog().catch(() => undefined);
+    }, catalogProjectionIntervalMilliseconds);
+  }
+
+  async #projectStaleCatalog(): Promise<void> {
+    const runtime = this.#runtime;
+    const configuration = this.#configuration;
+    if (runtime === undefined || configuration === undefined) return;
+    if ((await this.#state.storage.get<boolean>("catalog:stale")) !== true) return;
+    // Cleared before projecting, so updates that arrive meanwhile mark it again.
+    this.#catalogStale = false;
+    await this.#state.storage.delete("catalog:stale");
+    try {
+      const projection = await runtime.runPromise(
+        Effect.flatMap(InklingApplication, (application) =>
+          application.currentDocumentProjection(configuration.documentId),
+        ),
+      );
+      await this.#queueProjection(projection);
+    } catch (error) {
+      await this.#markCatalogStale();
+      throw error;
+    }
   }
 
   #upgrade(request: Request, documentId: string): Response {
@@ -651,11 +753,10 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
         yield* this.#broadcast(accepted);
         yield* Effect.tryPromise({
           catch: (cause) => cause,
-          try: () => this.#state.storage.setAlarm(Date.now() + 2_000),
-        });
-        const projection = yield* application.currentDocumentProjection(attachment.documentId);
-        yield* Effect.sync(() => {
-          this.#state.waitUntil(this.#queueProjection(projection));
+          try: async () => {
+            await this.#state.storage.setAlarm(Date.now() + 2_000);
+            await this.#markCatalogStale();
+          },
         });
         return;
       }
@@ -1155,7 +1256,9 @@ function createApplicationRuntime(
     storage,
     DigestLive,
     SecureTokenLive,
+    TokenHasherLive,
     CloudflareSecretHasherLive,
+    TokenHasherLive,
     IdGeneratorLive,
     MarkdownRendererLive,
   );
@@ -1211,6 +1314,21 @@ function isolatedWorkspaceState(configuration: DocumentRuntimeConfiguration): un
     schemaVersion: 1,
     workspaceId: configuration.workspaceId,
   };
+}
+
+const catalogProjectionIntervalMilliseconds = 2_000;
+const principalCacheMilliseconds = 30_000;
+const maximumCachedPrincipals = 256;
+
+/** Only signed-in credentials are cached; capabilities are verified by the document itself. */
+function principalCacheKey(
+  requestCredentials: RequestCredentials,
+  documentId: string | undefined,
+): string | undefined {
+  const { bearerToken, capabilityToken, sessionToken } = requestCredentials;
+  if (capabilityToken !== undefined) return undefined;
+  if (bearerToken === undefined && sessionToken === undefined) return undefined;
+  return JSON.stringify([documentId ?? null, bearerToken ?? null, sessionToken ?? null]);
 }
 
 function workspaceStub(environment: CloudflareEnvironment) {
