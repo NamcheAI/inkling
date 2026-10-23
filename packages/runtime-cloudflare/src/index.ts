@@ -144,7 +144,10 @@ export class WorkspaceDurableObject extends DurableObject<CloudflareEnvironment>
       "workspace",
     );
     this.#app = createBackendApp({ runtime: this.#runtime, version: "cloudflare" });
-    state.blockConcurrencyWhile(() => this.#runtime.runtime().then(() => undefined));
+    const started = Date.now();
+    state.blockConcurrencyWhile(() =>
+      this.#runtime.runtime().then(() => logStartup("workspace", Date.now() - started)),
+    );
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -584,6 +587,7 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
     };
     const peopleResolver: NonNullable<LocalApplicationOptions["peopleResolver"]> = (emails) =>
       callRpc(workspaceStub(this.#environment).resolvePeople(emails));
+    const started = Date.now();
     const runtime = createApplicationRuntime(
       this.#state,
       this.#environment,
@@ -596,6 +600,7 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
       "disabled",
     );
     await runtime.runtime();
+    logStartup("document", Date.now() - started);
     this.#configuration = configuration;
     this.#runtime = runtime;
     this.#app = createBackendApp({ runtime, version: "cloudflare-document" });
@@ -976,7 +981,11 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
 }
 
 const worker: ExportedHandler<CloudflareEnvironment> = {
-  fetch: (request, environment) => route(request, environment),
+  fetch: async (request, environment) => {
+    const timings = new RequestTimings(request);
+    const response = await route(request, timedEnvironment(environment, timings));
+    return timings.finish(request, response);
+  },
 };
 
 export default worker;
@@ -1158,6 +1167,134 @@ async function flushDocumentsForBackup(
     }),
   );
   return results.find((result) => !result.ok) ?? { ok: true, value: true };
+}
+
+/**
+ * Times one request's calls to the Durable Objects. API responses carry the
+ * result in a Server-Timing header; server-rendered pages stream before
+ * their data loads, so every request with such calls is also logged once
+ * its body is complete.
+ */
+class RequestTimings {
+  readonly #colo: string | undefined;
+  readonly #entries: string[] = [];
+  readonly #started = performance.now();
+  #calls = 0;
+
+  constructor(request: Request) {
+    const colo = (request.cf as { readonly colo?: unknown } | undefined)?.colo;
+    this.#colo = typeof colo === "string" ? colo : undefined;
+  }
+
+  /** Records a call; its description names the method and when it started, to show overlap. */
+  record(hop: string, method: string, started: number): void {
+    this.#calls += 1;
+    const offset = (started - this.#started).toFixed(0);
+    const duration = (performance.now() - started).toFixed(1);
+    this.#entries.push(`${hop};desc="${method} +${offset}ms";dur=${duration}`);
+  }
+
+  /** Keeps the time a Durable Object reported for itself under the hop's name. */
+  absorb(hop: string, response: Response): void {
+    const reported = response.headers.get("Server-Timing");
+    if (reported === null) return;
+    for (const metric of reported.split(",")) {
+      const trimmed = metric.trim();
+      if (trimmed.length > 0) this.#entries.push(`${hop}-${trimmed}`);
+    }
+  }
+
+  header(): string {
+    return [
+      ...(this.#colo === undefined ? [] : [`edge;desc="${this.#colo}"`]),
+      ...this.#entries,
+      `total;dur=${(performance.now() - this.#started).toFixed(1)}`,
+    ].join(", ");
+  }
+
+  finish(request: Request, response: Response): Response {
+    if (response.status === 101 || response.webSocket !== null) {
+      this.#log(request, response.status);
+      return response;
+    }
+    if (response.body !== null && response.headers.get("Content-Type")?.startsWith("text/html")) {
+      const log = () => this.#log(request, response.status);
+      const body = response.body.pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({ flush: log }),
+      );
+      return new Response(body, response);
+    }
+    this.#log(request, response.status);
+    return withHeader(response, "Server-Timing", this.header());
+  }
+
+  #log(request: Request, status: number): void {
+    if (this.#calls === 0) return;
+    console.log(
+      JSON.stringify({
+        event: "request_timing",
+        method: request.method,
+        path: new URL(request.url).pathname,
+        status,
+        timing: this.header(),
+      }),
+    );
+  }
+}
+
+/** Cold starts load state from storage; their duration shows what a first request waits for. */
+function logStartup(authority: "document" | "workspace", durationMs: number): void {
+  console.log(JSON.stringify({ authority, durationMs, event: "authority_started" }));
+}
+
+/** The environment with Durable Object bindings whose calls are timed. */
+function timedEnvironment(
+  environment: CloudflareEnvironment,
+  timings: RequestTimings,
+): CloudflareEnvironment {
+  const documents = timedNamespace(environment.INKLING_DOCUMENTS, "document", timings);
+  const workspace = timedNamespace(environment.INKLING_WORKSPACE, "workspace", timings);
+  // Bindings and variables are not all enumerable, so the environment is
+  // wrapped rather than copied.
+  return new Proxy(environment, {
+    get(target, property) {
+      if (property === "INKLING_DOCUMENTS") return documents;
+      if (property === "INKLING_WORKSPACE") return workspace;
+      return Reflect.get(target, property, target);
+    },
+  });
+}
+
+function timedNamespace<T extends object>(namespace: T, hop: string, timings: RequestTimings): T {
+  return new Proxy(namespace, {
+    get(target, property) {
+      const value: unknown = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      if (property !== "get") return value.bind(target);
+      return (...args: unknown[]) =>
+        timedStub(Reflect.apply(value, target, args) as object, hop, timings);
+    },
+  });
+}
+
+function timedStub<T extends object>(stub: T, hop: string, timings: RequestTimings): T {
+  return new Proxy(stub, {
+    get(target, property) {
+      const value: unknown = Reflect.get(target, property, target);
+      if (typeof property !== "string" || typeof value !== "function") return value;
+      return async (...args: unknown[]) => {
+        const started = performance.now();
+        try {
+          // RPC methods are stubs too: `value.apply` would call a remote "apply".
+          const result: unknown = await Reflect.apply(value, target, args);
+          if (result instanceof Response) timings.absorb(hop, result);
+          return result;
+        } finally {
+          timings.record(hop, property, started);
+        }
+      };
+    },
+  });
 }
 
 /** Marks the internal answer of a document authority that was never initialized. */

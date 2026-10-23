@@ -152,10 +152,13 @@ export function createBackendApp(options: BackendOptions = {}): Hono {
       uuidV7Bytes(startedAt, crypto.getRandomValues(new Uint8Array(10))),
     );
     await next();
+    const durationMs = Date.now() - startedAt;
     context.header("X-Request-Id", requestId);
+    // Lets the browser, and a Worker forwarding to this app, see time spent here.
+    context.header("Server-Timing", `app;dur=${durationMs}`, { append: true });
     console.log(
       JSON.stringify({
-        durationMs: Date.now() - startedAt,
+        durationMs,
         method: context.req.method,
         operation: operationCategory(context.req.path),
         requestId,
