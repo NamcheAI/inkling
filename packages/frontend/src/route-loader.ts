@@ -6,9 +6,8 @@ import type {
   PersonDto,
 } from "@earendil-works/inkling-protocol";
 
-import { ApiError, makeApiClient } from "./api.ts";
+import { ApiError } from "./api.ts";
 import type { ApiClientService } from "./api.ts";
-import { preloadDocumentScreen } from "./components/route-view.tsx";
 import type { FrontmatterVocabulary } from "./frontmatter-completion.ts";
 import type { RouteModel } from "./route-data.ts";
 import { formatRfcNumber } from "./ui.ts";
@@ -33,7 +32,7 @@ export function isApplicationPath(pathname: string): boolean {
 
 export function loadRoute(
   url: URL,
-  environment: RouteEnvironment = browserRouteEnvironment(),
+  environment: RouteEnvironment,
 ): Effect.Effect<RouteModel, ApiError> {
   const capabilityToken = url.searchParams.get("cap") ?? undefined;
   const client = environment.api(capabilityToken);
@@ -147,10 +146,6 @@ function loadRouteWith(
   );
 }
 
-function browserRouteEnvironment(): RouteEnvironment {
-  return { api: (capabilityToken) => makeApiClient(capabilityToken), preloadDocumentScreen };
-}
-
 function loadRfcRoute(
   environment: RouteEnvironment,
   api: ApiClientService,
@@ -168,18 +163,67 @@ function loadRfcRoute(
       const document = catalog.documents.find(
         (candidate) => candidate.metadata.rfcNumber === number,
       );
-      return document === undefined
-        ? Effect.fail(
-            new ApiError({
-              code: "not_found",
-              message: `RFC ${formatRfcNumber(number)} does not exist.`,
-              retryable: false,
-              status: 404,
-            }),
-          )
-        : loadDocumentRoute(environment, api, capabilityToken, document.metadata.id, screen, false);
+      if (document !== undefined) {
+        return loadDocumentRoute(
+          environment,
+          api,
+          capabilityToken,
+          document.metadata.id,
+          screen,
+          false,
+        );
+      }
+      // Anonymous readers only see public RFCs; a missing one may be private.
+      return api.authenticationStatus.pipe(
+        Effect.flatMap((authentication) =>
+          Effect.fail(
+            authentication.authenticated
+              ? new ApiError({
+                  code: "not_found",
+                  message: `RFC ${formatRfcNumber(number)} does not exist.`,
+                  retryable: false,
+                  status: 404,
+                })
+              : signInRequired(404),
+          ),
+        ),
+      );
     }),
   );
+}
+
+/**
+ * Explains a refused document without authorization internals, and asks
+ * anonymous readers to sign in.
+ */
+function accessDenied(api: ApiClientService, cause: ApiError): Effect.Effect<never, ApiError> {
+  return api.authenticationStatus.pipe(
+    Effect.map((authentication) => authentication.authenticated),
+    Effect.orElseSucceed(() => false),
+    Effect.flatMap((authenticated) =>
+      Effect.fail(
+        authenticated
+          ? new ApiError({
+              cause,
+              code: "forbidden",
+              message: "Your account cannot open this document.",
+              retryable: false,
+              status: cause.status,
+            })
+          : signInRequired(cause.status, cause),
+      ),
+    ),
+  );
+}
+
+function signInRequired(status: number, cause?: ApiError): ApiError {
+  return new ApiError({
+    cause,
+    code: "sign_in_required",
+    message: "Sign in to open this document.",
+    retryable: false,
+    status,
+  });
 }
 
 function loadDocumentRoute(
@@ -202,7 +246,16 @@ function loadDocumentRoute(
     try: () => environment.preloadDocumentScreen(screen),
   });
   return Effect.all(
-    [api.readDocument(documentId, screen === "reader"), api.authenticationStatus, preload],
+    [
+      api.readDocument(documentId, screen === "reader").pipe(
+        Effect.catchIf(
+          (error) => error.code === "forbidden",
+          (error) => accessDenied(api, error),
+        ),
+      ),
+      api.authenticationStatus,
+      preload,
+    ],
     {
       concurrency: "unbounded",
     },

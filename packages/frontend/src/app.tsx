@@ -4,11 +4,12 @@ import { Layout } from "@earendil-works/elanor-react";
 
 import type { PresenceDto } from "@earendil-works/inkling-protocol";
 
+import { makeApiClient } from "./api.ts";
 import { AppContext, LocationContext } from "./app-context.tsx";
 import type { AppContextValue, AppStatus, HeaderDocument, ToastKind } from "./app-context.tsx";
 import { AppHeader } from "./components/app-header.tsx";
 import type { BreadcrumbItem } from "./components/app-header.tsx";
-import { RouteView } from "./components/route-view.tsx";
+import { preloadDocumentScreen, RouteView } from "./components/route-view.tsx";
 import { ToastRegion } from "./components/toast-region.tsx";
 import type { ToastController } from "./components/toast-region.tsx";
 import { useEffectQuery } from "./effect-hooks.ts";
@@ -18,6 +19,11 @@ import type { RouteData, RouteModel } from "./route-data.ts";
 import { isApplicationPath, loadRoute } from "./route-loader.ts";
 import type { RouteEnvironment } from "./route-loader.ts";
 import { formatRfcNumber } from "./ui.ts";
+
+const browserRouteEnvironment: RouteEnvironment = {
+  api: (capabilityToken) => makeApiClient(capabilityToken),
+  preloadDocumentScreen,
+};
 
 interface LocationState {
   readonly generation: number;
@@ -32,7 +38,11 @@ export interface AppProps {
   readonly routeEnvironment?: RouteEnvironment | undefined;
 }
 
-export function App({ initialRoute, initialUrl, routeEnvironment }: AppProps): React.JSX.Element {
+export function App({
+  initialRoute,
+  initialUrl,
+  routeEnvironment = browserRouteEnvironment,
+}: AppProps): React.JSX.Element {
   const [locationState, setLocationState] = useState<LocationState>(() => ({
     generation: 0,
     url: initialUrl ?? new URL(location.href),

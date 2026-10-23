@@ -6,7 +6,9 @@ import { IconButton, Layout, TopNavigation } from "@earendil-works/elanor-react"
 import type { PresenceDto } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService } from "../api.ts";
+import { useCurrentUrl } from "../app-context.tsx";
 import type { AppStatus } from "../app-context.tsx";
+import { signInHref } from "../ui.ts";
 import { AccountControl } from "./account-control.tsx";
 import type { AccountControlProps } from "./account-control.tsx";
 import styles from "./app-header.module.css";
@@ -49,6 +51,7 @@ export function AppHeader({
     serverColorScheme,
   );
   const navigation = useNavigationProgress(navigating);
+  const url = useCurrentUrl();
 
   useEffect(() => syncThemeColor(), [scheme]);
 
@@ -126,7 +129,7 @@ export function AppHeader({
           {scheme === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
         </IconButton>
         {api === undefined ? null : account === undefined ? (
-          <ButtonLink data-sign-in="" href="/api/auth/google/start">
+          <ButtonLink data-sign-in="" href={signInHref(url)}>
             Sign in
           </ButtonLink>
         ) : (

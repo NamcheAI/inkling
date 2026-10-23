@@ -3,13 +3,16 @@ import { Suspense, use } from "react";
 import { Button, Container, EmptyState, Layout } from "@earendil-works/elanor-react";
 
 import type { ApiError } from "../api.ts";
+import { useCurrentUrl } from "../app-context.tsx";
 import type { EditorScreen as EditorScreenComponent } from "../editor-screen.tsx";
 import type { EffectQueryState } from "../effect-hooks.ts";
 import { LabelsScreen } from "../labels-screen.tsx";
 import type { ReaderScreen as ReaderScreenComponent } from "../reader-screen.tsx";
 import type { RouteModel } from "../route-data.ts";
 import { TrashScreen } from "../trash-screen.tsx";
+import { signInHref } from "../ui.ts";
 import { WorkspaceScreen } from "../workspace-screen.tsx";
+import { ButtonLink } from "./button-link.tsx";
 import styles from "./route-view.module.css";
 import { SharePasswordScreen } from "./share-password-screen.tsx";
 
@@ -81,25 +84,7 @@ export function RouteView({ navigationKey, refresh, state }: RouteViewProps): Re
   const model = state.data;
   if (model === undefined) {
     if (state.status === "failure") {
-      return (
-        <Layout.Main className={styles["fatal"]} id="app" tabIndex={-1}>
-          <Container>
-            <EmptyState.Root>
-              <EmptyState.Body>
-                <EmptyState.Copy>
-                  <EmptyState.Title level={1}>Inkling could not open.</EmptyState.Title>
-                  <EmptyState.Description>{state.error.message}</EmptyState.Description>
-                </EmptyState.Copy>
-                <EmptyState.Actions>
-                  <Button data-retry="" onClick={refresh}>
-                    Try again
-                  </Button>
-                </EmptyState.Actions>
-              </EmptyState.Body>
-            </EmptyState.Root>
-          </Container>
-        </Layout.Main>
-      );
+      return <FailureScreen error={state.error} refresh={refresh} />;
     }
     return <LoadingScreen />;
   }
@@ -158,6 +143,47 @@ export function RouteView({ navigationKey, refresh, state }: RouteViewProps): Re
 
 function LoadingScreen(): React.JSX.Element {
   return <Layout.Main aria-busy="true" id="app" tabIndex={-1} />;
+}
+
+function FailureScreen({
+  error,
+  refresh,
+}: {
+  readonly error: ApiError;
+  readonly refresh: () => void;
+}): React.JSX.Element {
+  const url = useCurrentUrl();
+  const signIn = error.code === "sign_in_required";
+  const denied = signIn || error.code === "forbidden";
+  return (
+    <Layout.Main className={styles["fatal"]} id="app" tabIndex={-1}>
+      <Container>
+        <EmptyState.Root>
+          <EmptyState.Body>
+            <EmptyState.Copy>
+              <EmptyState.Title level={1}>
+                {denied ? "You don’t have access." : "Inkling could not open."}
+              </EmptyState.Title>
+              <EmptyState.Description>{error.message}</EmptyState.Description>
+            </EmptyState.Copy>
+            {denied && !signIn ? null : (
+              <EmptyState.Actions>
+                {signIn ? (
+                  <ButtonLink data-sign-in="" href={signInHref(url)}>
+                    Sign in
+                  </ButtonLink>
+                ) : (
+                  <Button data-retry="" onClick={refresh}>
+                    Try again
+                  </Button>
+                )}
+              </EmptyState.Actions>
+            )}
+          </EmptyState.Body>
+        </EmptyState.Root>
+      </Container>
+    </Layout.Main>
+  );
 }
 
 export function preloadDocumentScreen(screen: "editor" | "reader"): Promise<unknown> {
