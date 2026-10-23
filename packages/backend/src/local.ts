@@ -257,7 +257,23 @@ export function makeLocalInklingApplication(
     const checkpointFibers = new Map<string, Fiber.RuntimeFiber<void, never>>();
     const dirtySince = new Map<string, number>();
     let state = yield* loadWorkspaceState(stateStore, options.workspaceId ?? "local");
-    state = yield* hydratePrivateDocumentState(state, objectStore);
+    // A runtime that owns private document state reads all of it when it
+    // starts. The workspace authority only mirrors what document authorities
+    // own, so it reads a document's state the first time it needs it, and a
+    // cold start waits for no object reads.
+    const hydratedPrivateState = new Set<string>();
+    if (options.ownsDocumentPrivateState !== false) {
+      state = mergePrivateDocumentStates(
+        state,
+        yield* loadPrivateDocumentStates(
+          state.workspaceId,
+          state.catalog.entries
+            .filter((entry) => entry.status === "active")
+            .map((entry) => entry.documentId),
+          objectStore,
+        ),
+      );
+    }
     const systemId = yield* personId("system@internal").pipe(Effect.mapError(toStorageError));
     const systemPrincipal: Principal = {
       kind: "workspace",
@@ -309,6 +325,27 @@ export function makeLocalInklingApplication(
       );
 
     const withState = stateMutex.withPermits(1);
+
+    /** Mirrors the private state of documents not read yet; see `hydratedPrivateState`. */
+    const ensurePrivateDocumentState = (
+      documentIds: readonly string[],
+    ): Effect.Effect<void, ApplicationError> =>
+      Effect.suspend(() => {
+        if (options.ownsDocumentPrivateState !== false) return Effect.void;
+        const pending = [...new Set(documentIds)].filter((id) => !hydratedPrivateState.has(id));
+        if (pending.length === 0) return Effect.void;
+        return loadPrivateDocumentStates(state.workspaceId, pending, objectStore).pipe(
+          Effect.flatMap((stored) =>
+            withState(
+              Effect.sync(() => {
+                state = mergePrivateDocumentStates(state, stored);
+                for (const id of pending) hydratedPrivateState.add(id);
+              }),
+            ),
+          ),
+          Effect.mapError(toApplicationError),
+        );
+      });
 
     const provideAuthorityDependencies = <A, E>(
       effect: Effect.Effect<
@@ -504,6 +541,7 @@ export function makeLocalInklingApplication(
           return authenticated.principal;
         }
         if (credentials.capabilityToken !== undefined && targetDocumentId !== undefined) {
+          yield* ensurePrivateDocumentState([targetDocumentId]);
           return yield* resolveCapability(
             state,
             credentials.capabilityToken,
@@ -863,6 +901,7 @@ export function makeLocalInklingApplication(
         if (entry === undefined) {
           return yield* applicationFailure("not_found", "The document does not exist.", 404);
         }
+        yield* ensurePrivateDocumentState([id]);
         return {
           capabilities: state.capabilities.filter(
             (capability) =>
@@ -1010,10 +1049,14 @@ export function makeLocalInklingApplication(
       authorizeRequest: resolvePrincipal,
       documentRuntimeConfiguration: runtimeConfiguration,
       allDocumentRuntimeConfigurations: () =>
-        Effect.forEach(
-          state.catalog.entries.filter((entry) => entry.status === "active"),
-          (entry) => runtimeConfiguration(entry.documentId),
-        ),
+        Effect.suspend(() => {
+          const active = state.catalog.entries.filter((entry) => entry.status === "active");
+          return ensurePrivateDocumentState(active.map((entry) => entry.documentId)).pipe(
+            Effect.zipRight(
+              Effect.forEach(active, (entry) => runtimeConfiguration(entry.documentId)),
+            ),
+          );
+        }),
       currentDocumentProjection: (rawDocumentId) =>
         getRoom(rawDocumentId).pipe(Effect.flatMap((room) => snapshotFor(room, systemPrincipal))),
       applyDocumentProjection: (document) =>
@@ -1091,6 +1134,11 @@ export function makeLocalInklingApplication(
         Effect.gen(function* () {
           const principal = yield* resolvePrincipal(credentials);
           yield* requireAdministrator(principal);
+          yield* ensurePrivateDocumentState(
+            state.catalog.entries
+              .filter((entry) => entry.status === "active")
+              .map((entry) => entry.documentId),
+          );
           yield* Effect.forEach(rooms.values(), (room) =>
             room.checkpoint(new Date().toISOString()).pipe(Effect.mapError(toApplicationError)),
           );
@@ -1317,6 +1365,8 @@ export function makeLocalInklingApplication(
           yield* Effect.forEach(rooms.values(), (room) => room.close);
           rooms.clear();
           publishedRevisions.clear();
+          // The restored objects hold private document state to mirror again.
+          hydratedPrivateState.clear();
           const restored: LocalWorkspaceState = {
             ...decodedState,
             authentication: normalizeAuthenticationState(decodedState.authentication),
@@ -2964,76 +3014,82 @@ function persistCatalogProjections(
   });
 }
 
-function hydratePrivateDocumentState(
-  initial: LocalWorkspaceState,
+interface StoredPrivateDocumentState {
+  readonly documentId: string;
+  readonly decoded: typeof privateDocumentStateSchema.Type;
+}
+
+/** Reads the private state documents keep in object storage, concurrently. */
+function loadPrivateDocumentStates(
+  workspaceId: string,
+  documentIds: readonly string[],
   objectStore: typeof ObjectStore.Service,
-): Effect.Effect<LocalWorkspaceState, StorageError> {
-  // Every active document has its own object, so read them concurrently; a
-  // cold workspace otherwise waits for one storage round trip per document.
+): Effect.Effect<readonly StoredPrivateDocumentState[], StorageError> {
   return Effect.forEach(
-    initial.catalog.entries.filter((entry) => entry.status === "active"),
-    (entry) =>
-      objectStore
-        .get(privateDocumentStateKey(initial.workspaceId, entry.documentId))
-        .pipe(Effect.map((stored) => ({ entry, stored }))),
+    documentIds,
+    (id) =>
+      objectStore.get(privateDocumentStateKey(workspaceId, id)).pipe(
+        Effect.flatMap((stored) =>
+          stored === undefined
+            ? Effect.succeed([])
+            : Schema.decodeUnknown(Schema.parseJson(privateDocumentStateSchema))(
+                textDecoder.decode(stored.bytes),
+              ).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new StorageError({
+                      cause,
+                      message: `Private document state is corrupt for ${id}.`,
+                      operation: "decode private document state",
+                      retryable: false,
+                    }),
+                ),
+                Effect.map((decoded) => [{ decoded, documentId: id }]),
+              ),
+        ),
+      ),
     { concurrency: 16 },
-  ).pipe(
-    Effect.flatMap((documents) =>
-      Effect.reduce(documents, initial, (current, { entry, stored }) => {
-        if (stored === undefined) return Effect.succeed(current);
-        return Schema.decodeUnknown(Schema.parseJson(privateDocumentStateSchema))(
-          textDecoder.decode(stored.bytes),
-        ).pipe(
-          Effect.mapError(
-            (cause) =>
-              new StorageError({
-                cause,
-                message: `Private document state is corrupt for ${entry.documentId}.`,
-                operation: "decode private document state",
-                retryable: false,
-              }),
-          ),
-          Effect.map((decoded) => {
-            const localCapabilities = current.capabilities.filter(
-              (capability) => capability.documentId === entry.documentId,
-            );
-            const projectedCapabilities = decoded.capabilities as readonly CapabilityRecord[];
-            const localGeneration = Math.max(
-              -1,
-              ...localCapabilities.map((item) => item.generation),
-            );
-            const projectedGeneration = Math.max(
-              -1,
-              ...projectedCapabilities.map((item) => item.generation),
-            );
-            const capabilities =
-              projectedGeneration >= localGeneration
-                ? [
-                    ...current.capabilities.filter(
-                      (capability) => capability.documentId !== entry.documentId,
-                    ),
-                    ...projectedCapabilities,
-                  ]
-                : current.capabilities;
-            const projectedAttachments =
-              decoded.attachments as unknown as readonly AttachmentMetadataDto[];
-            const attachments = [
-              ...(current.attachments[entry.documentId] ?? []),
-              ...projectedAttachments,
-            ].filter(
-              (attachment, index, all) =>
-                all.findIndex((candidate) => candidate.id === attachment.id) === index,
-            );
-            return {
-              ...current,
-              attachments: { ...current.attachments, [entry.documentId]: attachments },
-              capabilities,
-            };
-          }),
-        );
-      }),
-    ),
-  );
+  ).pipe(Effect.map((loaded) => loaded.flat()));
+}
+
+/** Merges stored private document state into the workspace state; newer sharing generations win. */
+function mergePrivateDocumentStates(
+  initial: LocalWorkspaceState,
+  stored: readonly StoredPrivateDocumentState[],
+): LocalWorkspaceState {
+  const replacedCapabilities = new Map<string, readonly CapabilityRecord[]>();
+  const attachments: Record<string, readonly AttachmentMetadataDto[]> = {
+    ...initial.attachments,
+  };
+  for (const { decoded, documentId: id } of stored) {
+    const projectedCapabilities = decoded.capabilities as readonly CapabilityRecord[];
+    const localGeneration = Math.max(
+      -1,
+      ...initial.capabilities
+        .filter((capability) => capability.documentId === id)
+        .map((capability) => capability.generation),
+    );
+    const projectedGeneration = Math.max(
+      -1,
+      ...projectedCapabilities.map((capability) => capability.generation),
+    );
+    if (projectedGeneration >= localGeneration) replacedCapabilities.set(id, projectedCapabilities);
+    const projectedAttachments = decoded.attachments as unknown as readonly AttachmentMetadataDto[];
+    attachments[id] = [...(initial.attachments[id] ?? []), ...projectedAttachments].filter(
+      (attachment, index, all) =>
+        all.findIndex((candidate) => candidate.id === attachment.id) === index,
+    );
+  }
+  return {
+    ...initial,
+    attachments,
+    capabilities: [
+      ...initial.capabilities.filter(
+        (capability) => !replacedCapabilities.has(capability.documentId),
+      ),
+      ...[...replacedCapabilities.values()].flat(),
+    ],
+  };
 }
 
 function persistPrivateDocumentState(
