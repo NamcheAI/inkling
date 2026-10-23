@@ -279,6 +279,26 @@ test(
         returnedProtected.headers.get("location"),
         "https://videos.example/watch?clip=cloudflare",
       );
+      // Signed-in readers get the application rendered on the server, with the
+      // route's data embedded for hydration and fingerprinted assets cached.
+      const renderedRfc = await fetch(`${running.baseUrl}/rfc/0001`, {
+        headers: { Cookie: returningCookie },
+      });
+      assert.equal(renderedRfc.status, 200);
+      assert.equal(renderedRfc.headers.get("Cache-Control"), "private, no-cache");
+      const renderedHtml = await renderedRfc.text();
+      assert.match(renderedHtml, /<div id="root"><div class=/u);
+      assert.match(renderedHtml, /data-reader=""/u);
+      assert.match(renderedHtml, />Armin Ronacher<\/a>/u);
+      assert.match(renderedHtml, /<script type="application\/json" id="inkling-initial-route">/u);
+      const entryScript = /<script type="module" crossorigin src="(\/assets\/[^"]+)"/u.exec(
+        renderedHtml,
+      )?.[1];
+      assert.ok(entryScript);
+      const asset = await fetch(`${running.baseUrl}${entryScript}`);
+      assert.equal(asset.status, 200);
+      assert.equal(asset.headers.get("Cache-Control"), "public, max-age=31536000, immutable");
+      await asset.arrayBuffer();
       const numericRfc = await fetch(`${running.baseUrl}/0001/`, { redirect: "manual" });
       assert.equal(numericRfc.status, 308);
       assert.equal(numericRfc.headers.get("location"), "/rfc/0001");

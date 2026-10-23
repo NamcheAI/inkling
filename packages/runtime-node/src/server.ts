@@ -14,6 +14,7 @@ import {
   findBundledTheme,
   isDefaultThemeSelection,
   InklingApplication,
+  staticAssetCacheControl,
   ThemeError,
 } from "@earendil-works/inkling-backend";
 import type {
@@ -22,6 +23,7 @@ import type {
   OpenAiCompatibleEmbedderOptions,
   ThemeConfiguration,
 } from "@earendil-works/inkling-backend";
+import type * as FrontendServer from "@earendil-works/inkling-frontend/server";
 import { MarkdownRendererLive } from "@earendil-works/inkling-renderer";
 
 import { localApplicationLayer } from "./application.ts";
@@ -129,11 +131,34 @@ export function startServer(
       ),
       "dist",
     );
+    const renderer = yield* loadApplicationRenderer(path.join(frontendRoot, "index.html"));
+    if (renderer !== undefined) {
+      // Application pages render on the server, loading their data through
+      // this application as the browser would.
+      app.on(["GET", "HEAD"], "*", async (context, next) => {
+        const page = renderer.render({
+          fetch: (request) => Promise.resolve(app.fetch(request)),
+          request: context.req.raw,
+          template: renderer.template,
+        });
+        if (page === undefined) return next();
+        return page;
+      });
+    }
     app.get("/trash", serveStatic({ path: "index.html", root: frontendRoot }));
     app.get("/documents/*", serveStatic({ path: "index.html", root: frontendRoot }));
     app.get("/rfc/*", serveStatic({ path: "index.html", root: frontendRoot }));
     app.get("/share/*", serveStatic({ path: "index.html", root: frontendRoot }));
-    app.use("/*", serveStatic({ root: frontendRoot }));
+    app.use(
+      "/*",
+      serveStatic({
+        onFound: (_path, context) => {
+          const cacheControl = staticAssetCacheControl(context.req.path);
+          if (cacheControl !== undefined) context.header("Cache-Control", cacheControl);
+        },
+        root: frontendRoot,
+      }),
+    );
 
     const server = yield* Effect.acquireRelease(
       Effect.sync(() =>
@@ -154,6 +179,31 @@ export function startServer(
     yield* Effect.addFinalizer(() => Effect.sync(removeWebSockets));
     return { runtime, server };
   }).pipe(Effect.provide(NodeFileSystem.layer));
+}
+
+interface ApplicationRenderer {
+  readonly render: typeof FrontendServer.renderApplication;
+  readonly template: string;
+}
+
+/**
+ * Loads the frontend's server renderer and the shell it renders into. Without
+ * a frontend build, application pages are served as the static shell.
+ */
+function loadApplicationRenderer(
+  templatePath: string,
+): Effect.Effect<ApplicationRenderer | undefined> {
+  return Effect.promise(async () => {
+    try {
+      const [{ renderApplication }, template] = await Promise.all([
+        import("@earendil-works/inkling-frontend/server"),
+        readFile(templatePath, "utf8"),
+      ]);
+      return { render: renderApplication, template };
+    } catch {
+      return undefined;
+    }
+  });
 }
 
 /** Loads `INKLING_THEME`; the default selection keeps Elanor's own theme and yields no overrides. */

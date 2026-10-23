@@ -121,6 +121,7 @@ import {
 } from "@earendil-works/inkling-renderer";
 
 const textEncoder = new TextEncoder();
+const maximumCachedPublishedRevisions = 128;
 const textDecoder = new TextDecoder();
 
 interface CapabilityRecord {
@@ -275,6 +276,37 @@ export function makeLocalInklingApplication(
         Effect.provideService(DurableDocumentJournal, journal),
         Effect.provideService(Digest, digest),
       );
+
+    // Published revisions never change, so each is read from storage once.
+    // Reads of public documents and catalogs otherwise fetch every revision
+    // from object storage on every request.
+    const publishedRevisions = new Map<string, DocumentSnapshot>();
+    const loadPublishedRevision = (
+      id: DocumentId,
+      revision: DocumentRevision,
+    ): Effect.Effect<DocumentSnapshot, ApplicationError> => {
+      const key = `${state.workspaceId}:${id}:${revision}`;
+      const cached = publishedRevisions.get(key);
+      if (cached !== undefined) {
+        publishedRevisions.delete(key);
+        publishedRevisions.set(key, cached);
+        return Effect.succeed(cached);
+      }
+      return provideAuthorityDependencies(
+        loadDocumentRevision({ documentId: id, workspaceId: state.workspaceId }, revision),
+      ).pipe(
+        Effect.mapError(toApplicationError),
+        Effect.tap((snapshot) =>
+          Effect.sync(() => {
+            publishedRevisions.set(key, snapshot);
+            for (const oldest of publishedRevisions.keys()) {
+              if (publishedRevisions.size <= maximumCachedPublishedRevisions) break;
+              publishedRevisions.delete(oldest);
+            }
+          }),
+        ),
+      );
+    };
 
     const getRoom = (
       rawDocumentId: string,
@@ -452,12 +484,7 @@ export function makeLocalInklingApplication(
             comments: { revision: 0, threads: [] },
           };
         }
-        const published = yield* provideAuthorityDependencies(
-          loadDocumentRevision(
-            { documentId: current.metadata.id, workspaceId: state.workspaceId },
-            publishedRevision,
-          ),
-        ).pipe(Effect.mapError(toApplicationError));
+        const published = yield* loadPublishedRevision(current.metadata.id, publishedRevision);
         const metadata = yield* metadataWithResolvedAuthors(published.metadata);
         const anonymousBody =
           principal.kind === "anonymous"
@@ -513,12 +540,7 @@ export function makeLocalInklingApplication(
           return;
         }
         if ((yield* searchIndex.indexedRevision(id, "published")) === publishedRevision) return;
-        const published = yield* provideAuthorityDependencies(
-          loadDocumentRevision(
-            { documentId: id, workspaceId: state.workspaceId },
-            publishedRevision,
-          ),
-        );
+        const published = yield* loadPublishedRevision(id, publishedRevision);
         yield* searchIndex.indexDocument({
           body: redactProtectedLinkText(published.body),
           documentId: id,
@@ -753,12 +775,7 @@ export function makeLocalInklingApplication(
             404,
           );
         }
-        const published = yield* provideAuthorityDependencies(
-          loadDocumentRevision(
-            { documentId: current.metadata.id, workspaceId: state.workspaceId },
-            publishedRevision,
-          ),
-        ).pipe(Effect.mapError(toApplicationError));
+        const published = yield* loadPublishedRevision(current.metadata.id, publishedRevision);
         const rendered = yield* renderer
           .render(published.body, {
             protectedLinkHref: ({ index }) =>
@@ -783,6 +800,20 @@ export function makeLocalInklingApplication(
           } as DocumentMetadataDto,
         };
       });
+
+    /** The document of a published public RFC, from the catalog alone. */
+    const publicRfcDocumentId = (rfcNumber: number): Effect.Effect<string, ApplicationError> => {
+      const entry = state.catalog.entries.find(
+        (item) =>
+          item.status === "active" &&
+          (item.rfcNumber === rfcNumber || item.summary?.rfcNumber === rfcNumber) &&
+          item.summary?.visibility === "public" &&
+          item.summary.publishedRevision !== undefined,
+      );
+      return entry === undefined
+        ? applicationFailure("not_found", "The published RFC does not exist.", 404)
+        : Effect.succeed(entry.documentId);
+    };
 
     const rebuildSearch: Effect.Effect<SearchRebuildResponse, ApplicationError> = Effect.gen(
       function* () {
@@ -1131,6 +1162,7 @@ export function makeLocalInklingApplication(
           );
           yield* Effect.forEach(rooms.values(), (room) => room.close);
           rooms.clear();
+          publishedRevisions.clear();
           const restored: LocalWorkspaceState = {
             ...decodedState,
             authentication: normalizeAuthenticationState(decodedState.authentication),
@@ -1961,39 +1993,37 @@ export function makeLocalInklingApplication(
               bodyMatches.has(summary.documentId) ||
               metadataMatches(summary),
           );
-          const documents = yield* Effect.forEach(entries, (summary) => {
-            const publishedRevision = summary.publishedRevision;
-            if (publishedRevision === undefined) return Effect.succeed(undefined);
-            return provideAuthorityDependencies(
-              loadDocumentRevision(
-                { documentId: summary.documentId, workspaceId: state.workspaceId },
-                publishedRevision,
-              ),
-            ).pipe(
-              Effect.mapError(toApplicationError),
-              Effect.flatMap((snapshot) =>
-                metadataWithResolvedAuthors(snapshot.metadata).pipe(
-                  Effect.map((metadata) => {
-                    const publicBody = redactProtectedLinkText(snapshot.body);
-                    return (normalizedQuery.length === 0 ||
-                      bodyMatches.has(summary.documentId) ||
-                      metadataMatches(metadata)) &&
-                      (lifecycleState === undefined ||
-                        metadata.lifecycleState === lifecycleState) &&
-                      (label === undefined || metadata.labels.includes(label))
-                      ? {
-                          excerpt: excerpt(publicBody),
-                          metadata: {
-                            ...metadata,
-                            publishedRevision,
-                          } as DocumentMetadataDto,
-                        }
-                      : undefined;
-                  }),
+          const documents = yield* Effect.forEach(
+            entries,
+            (summary) => {
+              const publishedRevision = summary.publishedRevision;
+              if (publishedRevision === undefined) return Effect.succeed(undefined);
+              return loadPublishedRevision(summary.documentId, publishedRevision).pipe(
+                Effect.flatMap((snapshot) =>
+                  metadataWithResolvedAuthors(snapshot.metadata).pipe(
+                    Effect.map((metadata) => {
+                      const publicBody = redactProtectedLinkText(snapshot.body);
+                      return (normalizedQuery.length === 0 ||
+                        bodyMatches.has(summary.documentId) ||
+                        metadataMatches(metadata)) &&
+                        (lifecycleState === undefined ||
+                          metadata.lifecycleState === lifecycleState) &&
+                        (label === undefined || metadata.labels.includes(label))
+                        ? {
+                            excerpt: excerpt(publicBody),
+                            metadata: {
+                              ...metadata,
+                              publishedRevision,
+                            } as DocumentMetadataDto,
+                          }
+                        : undefined;
+                    }),
+                  ),
                 ),
-              ),
-            );
-          });
+              );
+            },
+            { concurrency: 8 },
+          );
           return {
             documents: documents.filter(
               (document): document is Exclude<typeof document, undefined> => document !== undefined,
@@ -2364,19 +2394,11 @@ export function makeLocalInklingApplication(
       readPublicDocument: (rawDocumentId) =>
         readPublished(rawDocumentId, `/public/documents/${encodeURIComponent(rawDocumentId)}`),
       readPublicRfc: (rfcNumber) =>
-        Effect.gen(function* () {
-          const entry = state.catalog.entries.find(
-            (item) =>
-              item.status === "active" &&
-              (item.rfcNumber === rfcNumber || item.summary?.rfcNumber === rfcNumber) &&
-              item.summary?.visibility === "public" &&
-              item.summary.publishedRevision !== undefined,
-          );
-          if (entry === undefined) {
-            return yield* applicationFailure("not_found", "The published RFC does not exist.", 404);
-          }
-          return yield* readPublished(entry.documentId, canonicalRfcPath(rfcNumber));
-        }),
+        publicRfcDocumentId(rfcNumber).pipe(
+          Effect.flatMap((id) => readPublished(id, canonicalRfcPath(rfcNumber))),
+        ),
+      publicRfcRuntimeConfiguration: (rfcNumber) =>
+        publicRfcDocumentId(rfcNumber).pipe(Effect.flatMap(runtimeConfiguration)),
       resolveProtectedLink: (credentials, rawDocumentId, rawRevision, linkIndex) =>
         Effect.gen(function* () {
           const id = yield* documentId(rawDocumentId).pipe(Effect.mapError(toApplicationError));
@@ -2385,9 +2407,7 @@ export function makeLocalInklingApplication(
           const revision = yield* documentRevision(rawRevision).pipe(
             Effect.mapError(toApplicationError),
           );
-          const published = yield* provideAuthorityDependencies(
-            loadDocumentRevision({ documentId: id, workspaceId: state.workspaceId }, revision),
-          ).pipe(Effect.mapError(toApplicationError));
+          const published = yield* loadPublishedRevision(id, revision);
           const rendered = yield* renderer
             .render(published.body, { rewriteUrl: rewriteRfcUrl })
             .pipe(Effect.mapError(toApplicationError));
@@ -2783,65 +2803,71 @@ function hydratePrivateDocumentState(
   initial: LocalWorkspaceState,
   objectStore: typeof ObjectStore.Service,
 ): Effect.Effect<LocalWorkspaceState, StorageError> {
-  return Effect.reduce(
+  // Every active document has its own object, so read them concurrently; a
+  // cold workspace otherwise waits for one storage round trip per document.
+  return Effect.forEach(
     initial.catalog.entries.filter((entry) => entry.status === "active"),
-    initial,
-    (current, entry) =>
-      objectStore.get(privateDocumentStateKey(current.workspaceId, entry.documentId)).pipe(
-        Effect.flatMap((stored) => {
-          if (stored === undefined) return Effect.succeed(current);
-          return Schema.decodeUnknown(Schema.parseJson(privateDocumentStateSchema))(
-            textDecoder.decode(stored.bytes),
-          ).pipe(
-            Effect.mapError(
-              (cause) =>
-                new StorageError({
-                  cause,
-                  message: `Private document state is corrupt for ${entry.documentId}.`,
-                  operation: "decode private document state",
-                  retryable: false,
-                }),
-            ),
-            Effect.map((decoded) => {
-              const localCapabilities = current.capabilities.filter(
-                (capability) => capability.documentId === entry.documentId,
-              );
-              const projectedCapabilities = decoded.capabilities as readonly CapabilityRecord[];
-              const localGeneration = Math.max(
-                -1,
-                ...localCapabilities.map((item) => item.generation),
-              );
-              const projectedGeneration = Math.max(
-                -1,
-                ...projectedCapabilities.map((item) => item.generation),
-              );
-              const capabilities =
-                projectedGeneration >= localGeneration
-                  ? [
-                      ...current.capabilities.filter(
-                        (capability) => capability.documentId !== entry.documentId,
-                      ),
-                      ...projectedCapabilities,
-                    ]
-                  : current.capabilities;
-              const projectedAttachments =
-                decoded.attachments as unknown as readonly AttachmentMetadataDto[];
-              const attachments = [
-                ...(current.attachments[entry.documentId] ?? []),
-                ...projectedAttachments,
-              ].filter(
-                (attachment, index, all) =>
-                  all.findIndex((candidate) => candidate.id === attachment.id) === index,
-              );
-              return {
-                ...current,
-                attachments: { ...current.attachments, [entry.documentId]: attachments },
-                capabilities,
-              };
-            }),
-          );
-        }),
-      ),
+    (entry) =>
+      objectStore
+        .get(privateDocumentStateKey(initial.workspaceId, entry.documentId))
+        .pipe(Effect.map((stored) => ({ entry, stored }))),
+    { concurrency: 16 },
+  ).pipe(
+    Effect.flatMap((documents) =>
+      Effect.reduce(documents, initial, (current, { entry, stored }) => {
+        if (stored === undefined) return Effect.succeed(current);
+        return Schema.decodeUnknown(Schema.parseJson(privateDocumentStateSchema))(
+          textDecoder.decode(stored.bytes),
+        ).pipe(
+          Effect.mapError(
+            (cause) =>
+              new StorageError({
+                cause,
+                message: `Private document state is corrupt for ${entry.documentId}.`,
+                operation: "decode private document state",
+                retryable: false,
+              }),
+          ),
+          Effect.map((decoded) => {
+            const localCapabilities = current.capabilities.filter(
+              (capability) => capability.documentId === entry.documentId,
+            );
+            const projectedCapabilities = decoded.capabilities as readonly CapabilityRecord[];
+            const localGeneration = Math.max(
+              -1,
+              ...localCapabilities.map((item) => item.generation),
+            );
+            const projectedGeneration = Math.max(
+              -1,
+              ...projectedCapabilities.map((item) => item.generation),
+            );
+            const capabilities =
+              projectedGeneration >= localGeneration
+                ? [
+                    ...current.capabilities.filter(
+                      (capability) => capability.documentId !== entry.documentId,
+                    ),
+                    ...projectedCapabilities,
+                  ]
+                : current.capabilities;
+            const projectedAttachments =
+              decoded.attachments as unknown as readonly AttachmentMetadataDto[];
+            const attachments = [
+              ...(current.attachments[entry.documentId] ?? []),
+              ...projectedAttachments,
+            ].filter(
+              (attachment, index, all) =>
+                all.findIndex((candidate) => candidate.id === attachment.id) === index,
+            );
+            return {
+              ...current,
+              attachments: { ...current.attachments, [entry.documentId]: attachments },
+              capabilities,
+            };
+          }),
+        );
+      }),
+    ),
   );
 }
 

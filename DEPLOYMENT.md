@@ -70,6 +70,8 @@ pnpm dev
 
 Open <http://localhost:5173>. Vite proxies API and WebSocket traffic to the Worker. Google authentication is mandatory in the Cloudflare runtime; it fails closed when OAuth is not configured.
 
+Deployed Inkling renders application pages on the server: the Worker (or the Node.js server) loads the page's data through its own API, renders the page with the frontend's server renderer, and embeds the data so the browser hydrates the page without fetching it again. The editor itself renders in the browser. Vite's development server serves the unrendered shell with hot reloading instead. To try server rendering locally, `pnpm dev` builds the frontend before starting the Worker; open <http://localhost:8787> after signing in on port 5173, and rebuild with `pnpm --filter @earendil-works/inkling-frontend run build` after frontend changes.
+
 `.dev.vars` is ignored by Git. Never commit OAuth client secrets or state-signing secrets.
 
 ### Authentication settings

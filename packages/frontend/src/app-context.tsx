@@ -30,6 +30,15 @@ export interface AppContextValue {
 
 export const AppContext = createContext<AppContextValue | undefined>(undefined);
 
+/** The location the application is rendering, on the server and in the browser. */
+export const LocationContext = createContext<URL | undefined>(undefined);
+
+export function useCurrentUrl(): URL {
+  const value = useContext(LocationContext);
+  if (value === undefined) throw new Error("LocationContext is unavailable.");
+  return value;
+}
+
 export function useAppContext(): AppContextValue {
   const value = useContext(AppContext);
   if (value === undefined) throw new Error("AppContext is unavailable.");

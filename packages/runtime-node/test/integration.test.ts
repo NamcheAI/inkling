@@ -593,6 +593,60 @@ test(
   },
 );
 
+test("application pages render on the server with the reader's data", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "inkling-render-"));
+  try {
+    await withServer(directory, async (baseUrl, session) => {
+      const created = await fetch(`${baseUrl}/api/documents`, {
+        body: JSON.stringify({
+          body: "# Rendered on the server\n\nNo waiting for scripts.\n",
+          creationKey: "server-render",
+          title: "Rendered on the server",
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: session.cookieHeader,
+          Origin: baseUrl,
+          "X-CSRF-Token": session.csrf,
+        },
+        method: "POST",
+      });
+      assert.equal(created.status, 200);
+      const documentId = ((await created.json()) as { metadata: { id: string } }).metadata.id;
+
+      const workspace = await fetch(`${baseUrl}/`, { headers: { Cookie: session.cookieHeader } });
+      assert.equal(workspace.status, 200);
+      assert.equal(workspace.headers.get("Cache-Control"), "private, no-cache");
+      const workspaceHtml = await workspace.text();
+      assert.match(workspaceHtml, new RegExp(`data-catalog-document-id="${documentId}"`, "u"));
+      assert.match(workspaceHtml, /id="inkling-initial-route"/u);
+
+      const editor = await fetch(`${baseUrl}/documents/${documentId}/edit`, {
+        headers: { Cookie: session.cookieHeader },
+      });
+      const editorHtml = await editor.text();
+      assert.match(editorHtml, /<title>Rendered on the server<\/title>/u);
+      assert.match(editorHtml, /data-dgst="inkling-client-only"/u);
+
+      // Anonymous readers cannot load private documents, so they get the static shell.
+      const anonymous = await fetch(`${baseUrl}/documents/${documentId}`);
+      const anonymousHtml = await anonymous.text();
+      assert.match(anonymousHtml, /INKLING AGENT HANDOFF<\/h1>/u);
+      assert.doesNotMatch(anonymousHtml, /Rendered on the server|inkling-initial-route/u);
+
+      const entryScript = /<script type="module" crossorigin src="(\/assets\/[^"]+)"/u.exec(
+        workspaceHtml,
+      )?.[1];
+      assert.ok(entryScript);
+      const asset = await fetch(`${baseUrl}${entryScript}`);
+      assert.equal(asset.headers.get("Cache-Control"), "public, max-age=31536000, immutable");
+      await asset.arrayBuffer();
+    });
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 test("search indexes working passages and published revisions", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "inkling-search-"));
   try {

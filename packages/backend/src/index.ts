@@ -91,7 +91,12 @@ export type {
   SqlSearchIndexOptions,
 } from "./search.ts";
 export type { LocalApplicationOptions } from "./local.ts";
-export { canonicalRfcPath, protectedLinkPath, rfcRedirectLocation } from "./routes.ts";
+export {
+  canonicalRfcPath,
+  protectedLinkPath,
+  rfcRedirectLocation,
+  staticAssetCacheControl,
+} from "./routes.ts";
 export {
   handleMcpRequest,
   mcpEndpointPath,

@@ -370,6 +370,10 @@ export interface InklingApplicationService {
   readonly readPublicRfc: (
     rfcNumber: number,
   ) => Effect.Effect<PublicDocumentResponse, ApplicationError>;
+  /** Internal: the runtime configuration of the document behind a published public RFC. */
+  readonly publicRfcRuntimeConfiguration: (
+    rfcNumber: number,
+  ) => Effect.Effect<DocumentRuntimeConfiguration, ApplicationError>;
   readonly resolveProtectedLink: (
     credentials: RequestCredentials,
     documentId: string,

@@ -18,6 +18,7 @@ import type {
 import {
   agentResourceUnavailableResponse,
   ApplicationError,
+  staticAssetCacheControl,
   createBackendApp,
   decodeThemeJson,
   DigestLive,
@@ -61,6 +62,7 @@ import type {
   PresenceDto,
   ServerCollaborationMessage,
 } from "@earendil-works/inkling-protocol";
+import { renderApplication } from "@earendil-works/inkling-frontend/server";
 import { MarkdownRendererLive } from "@earendil-works/inkling-renderer";
 
 import { CloudflareSecretHasherLive } from "./crypto.ts";
@@ -289,23 +291,7 @@ export class WorkspaceDurableObject extends DurableObject<CloudflareEnvironment>
     return runRpc(
       this.#runtime,
       Effect.flatMap(InklingApplication, (application) =>
-        application.listPublicDocuments("").pipe(
-          Effect.flatMap((catalog) => {
-            const document = catalog.documents.find(
-              (candidate) => candidate.metadata.rfcNumber === rfcNumber,
-            );
-            return document === undefined
-              ? Effect.fail(
-                  new ApplicationError({
-                    code: "not_found",
-                    message: "The published RFC does not exist.",
-                    retryable: false,
-                    status: 404,
-                  }),
-                )
-              : application.documentRuntimeConfiguration(document.metadata.id);
-          }),
-        ),
+        application.publicRfcRuntimeConfiguration(rfcNumber),
       ),
     );
   }
@@ -414,12 +400,14 @@ export class DocumentDurableObject extends DurableObject<CloudflareEnvironment> 
   override async fetch(request: Request): Promise<Response> {
     const configuration = await this.#loadConfiguration();
     if (configuration === undefined) {
-      return protocolErrorResponse({
+      const response = protocolErrorResponse({
         code: "document_not_initialized",
         message: "The document authority has not been initialized.",
         retryable: true,
         status: 503,
       });
+      response.headers.set(uninitializedDocumentHeader, "1");
+      return response;
     }
     await this.#ensureRuntime(configuration);
     const runtime = this.#runtime;
@@ -953,7 +941,7 @@ async function route(request: Request, environment: CloudflareEnvironment): Prom
     return dispatchDocument(request, environment, documentId);
   }
   if (/^\/rfc\/\d+$/u.test(url.pathname) && credentials(request).sessionToken !== undefined) {
-    return environment.ASSETS.fetch(request);
+    return serveApplication(request, environment);
   }
   const rfcNumber = rfcNumberFromPath(url.pathname);
   if (rfcNumber !== undefined) {
@@ -989,7 +977,60 @@ async function route(request: Request, environment: CloudflareEnvironment): Prom
     }
     return workspaceStub(environment).fetch(request);
   }
-  return environment.ASSETS.fetch(request);
+  return serveApplication(request, environment);
+}
+
+/**
+ * Serves application pages rendered on the server and every other path from
+ * the static assets. Rendering loads the page's data through this router, as
+ * the browser would, without leaving the Worker.
+ */
+async function serveApplication(
+  request: Request,
+  environment: CloudflareEnvironment,
+): Promise<Response> {
+  if (request.method === "GET" || request.method === "HEAD") {
+    const template = await applicationTemplate(request, environment);
+    const page =
+      template === undefined
+        ? undefined
+        : renderApplication({
+            fetch: (inner) => route(inner, environment),
+            request,
+            template,
+          });
+    if (page !== undefined) return page;
+  }
+  const response = await environment.ASSETS.fetch(request);
+  const cacheControl = response.ok
+    ? staticAssetCacheControl(new URL(request.url).pathname)
+    : undefined;
+  return cacheControl === undefined
+    ? response
+    : withHeader(response, "Cache-Control", cacheControl);
+}
+
+let templatePromise: Promise<string | undefined> | undefined;
+
+/** The built application shell; assets only change with a deployment, so isolates keep it. */
+function applicationTemplate(
+  request: Request,
+  environment: CloudflareEnvironment,
+): Promise<string | undefined> {
+  templatePromise ??= environment.ASSETS.fetch(new Request(new URL("/", request.url)))
+    .then((response) => (response.ok ? response.text() : undefined))
+    .catch(() => undefined)
+    .then((template) => {
+      if (template === undefined) templatePromise = undefined;
+      return template;
+    });
+  return templatePromise;
+}
+
+function withHeader(response: Response, name: string, value: string): Response {
+  const copy = new Response(response.body, response);
+  copy.headers.set(name, value);
+  return copy;
 }
 
 function themeFromEnvironment(
@@ -1018,12 +1059,29 @@ async function flushDocumentsForBackup(
   return results.find((result) => !result.ok) ?? { ok: true, value: true };
 }
 
+/** Marks the internal answer of a document authority that was never initialized. */
+const uninitializedDocumentHeader = "X-Inkling-Document-Uninitialized";
+
 async function dispatchDocument(
   request: Request,
   environment: CloudflareEnvironment,
   documentId: string,
   knownConfiguration?: DocumentRuntimeConfiguration,
 ): Promise<Response> {
+  // An initialized authority answers reads by itself and authorizes them
+  // with the workspace; asking the workspace for its configuration first
+  // only adds a round trip. Writes keep the configuration check, and reads
+  // fall back to it when the authority has never been initialized.
+  if (
+    knownConfiguration === undefined &&
+    (request.method === "GET" || request.method === "HEAD") &&
+    /^[A-Za-z0-9_-]{10,128}$/u.test(documentId)
+  ) {
+    const response = await environment.INKLING_DOCUMENTS.get(
+      environment.INKLING_DOCUMENTS.idFromName(documentId),
+    ).fetch(request);
+    if (response.headers.get(uninitializedDocumentHeader) === null) return response;
+  }
   const configurationResult =
     knownConfiguration === undefined
       ? await workspaceStub(environment).configuration(documentId)

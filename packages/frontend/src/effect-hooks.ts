@@ -14,18 +14,36 @@ export interface EffectQuery<A, E> {
   readonly refresh: () => void;
 }
 
-/** Runs a keyed Effect as a cancellable React query. */
+/** Data that is already known for one query key, such as a server-rendered route. */
+export interface EffectQueryInitialData<A> {
+  readonly data: A;
+  readonly key: string;
+}
+
+/**
+ * Runs a keyed Effect as a cancellable React query. Initial data for the
+ * current key is used as is instead of running the query, until it is
+ * refreshed or the key changes.
+ */
 export function useEffectQuery<A, E>(
   query: Effect.Effect<A, E>,
   queryKey: string,
+  initial?: EffectQueryInitialData<A>,
 ): EffectQuery<A, E> {
   const [refreshVersion, setRefreshVersion] = useState(0);
-  const [state, setState] = useState<EffectQueryState<A, E>>({
-    data: undefined,
-    status: "loading",
-  });
+  const initialKeyRef = useRef(initial?.key === queryKey ? queryKey : undefined);
+  const [state, setState] = useState<EffectQueryState<A, E>>(() =>
+    initial !== undefined && initial.key === queryKey
+      ? { data: initial.data, status: "success" }
+      : { data: undefined, status: "loading" },
+  );
 
   useEffect(() => {
+    if (initialKeyRef.current !== undefined) {
+      const satisfied = initialKeyRef.current === queryKey && refreshVersion === 0;
+      initialKeyRef.current = undefined;
+      if (satisfied) return;
+    }
     let active = true;
     setState((current) => ({ data: current.data, status: "loading" }));
     const fiber = browserRuntime.runFork(

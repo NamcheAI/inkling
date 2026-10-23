@@ -152,12 +152,19 @@ export function apiClientLayer(capabilityToken?: string): Layer.Layer<ApiClientS
   return Layer.succeed(ApiClient, makeApiClient(capabilityToken));
 }
 
-export function makeApiClient(capabilityToken?: string): ApiClientService {
+/** Sends an API request for a same-origin path; `fetch` in the browser. */
+export type ApiTransport = (path: string, init: RequestInit) => Promise<Response>;
+
+export function makeApiClient(
+  capabilityToken?: string,
+  transport: ApiTransport = (path, init) => fetch(path, init),
+): ApiClientService {
   const withCapability = (url: string): string => {
     if (capabilityToken === undefined) {
       return url;
     }
-    const parsed = new URL(url, location.origin);
+    // Only the path and query are used, so any base works.
+    const parsed = new URL(url, "http://inkling.invalid");
     parsed.searchParams.set("cap", capabilityToken);
     return `${parsed.pathname}${parsed.search}`;
   };
@@ -166,9 +173,8 @@ export function makeApiClient(capabilityToken?: string): ApiClientService {
     url: string,
     schema: Schema.Schema<A, I>,
     init?: RequestInit,
-  ): Effect.Effect<A, ApiError> => {
-    const currentCsrf = csrfToken();
-    return Effect.tryPromise({
+  ): Effect.Effect<A, ApiError> =>
+    Effect.tryPromise({
       catch: (cause) =>
         new ApiError({
           cause,
@@ -177,8 +183,9 @@ export function makeApiClient(capabilityToken?: string): ApiClientService {
           retryable: true,
           status: 0,
         }),
-      try: () =>
-        fetch(withCapability(url), {
+      try: () => {
+        const currentCsrf = init?.method === undefined ? undefined : csrfToken();
+        return transport(withCapability(url), {
           ...init,
           headers: {
             Accept: "application/json",
@@ -186,7 +193,8 @@ export function makeApiClient(capabilityToken?: string): ApiClientService {
             ...(currentCsrf === undefined ? {} : { "X-CSRF-Token": currentCsrf }),
             ...init?.headers,
           },
-        }),
+        });
+      },
     }).pipe(
       Effect.flatMap((response) =>
         Effect.tryPromise({
@@ -241,7 +249,6 @@ export function makeApiClient(capabilityToken?: string): ApiClientService {
         ),
       ),
     );
-  };
 
   const mutation = <A, I>(
     url: string,
