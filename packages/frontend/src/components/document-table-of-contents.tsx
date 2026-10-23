@@ -95,6 +95,12 @@ function headingTree(headings: readonly RenderHeading[]): readonly HeadingNode[]
   return roots;
 }
 
+/** A computed length in pixels; `auto` and other non-lengths count as zero. */
+function cssPixels(value: string): number {
+  const pixels = Number.parseFloat(value);
+  return Number.isFinite(pixels) ? pixels : 0;
+}
+
 function useActiveHeading(
   headings: readonly RenderHeading[],
   tableOfContentsRef: React.RefObject<HTMLElement | null>,
@@ -131,11 +137,14 @@ function useActiveHeading(
       }
       const firstHeading = headingElements[0];
       const viewportTop = scrollContainer?.getBoundingClientRect().top ?? 0;
+      // A heading counts as reached where jumping to it places it: below the scroller's scroll
+      // padding and the heading's own scroll margin.
+      const scrollPadding = cssPixels(
+        getComputedStyle(scrollContainer ?? document.documentElement).scrollPaddingTop,
+      );
       const scrollMargin =
-        firstHeading === undefined
-          ? 0
-          : Number.parseFloat(getComputedStyle(firstHeading).scrollMarginTop);
-      const activationTop = viewportTop + (Number.isFinite(scrollMargin) ? scrollMargin : 0);
+        firstHeading === undefined ? 0 : cssPixels(getComputedStyle(firstHeading).scrollMarginTop);
+      const activationTop = viewportTop + scrollPadding + scrollMargin;
       let active = firstHeading;
       for (const heading of headingElements) {
         if (heading.getBoundingClientRect().top > activationTop + 1) break;

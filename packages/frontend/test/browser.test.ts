@@ -657,6 +657,33 @@ test(
       await first.waitForURL(/#delivery$/u);
       first.off("request", recordFragmentRequest);
       assert.deepEqual(fragmentRequests, []);
+      // Narrow pages collapse the table of contents into a menu. Opening it while scrolled moves
+      // focus into the list, which must not scroll the page and close the menu again.
+      await first.setViewportSize({ height: 400, width: 800 });
+      const readerMenuTrigger = first.locator("[data-reader-toc] button");
+      await readerMenuTrigger.waitFor();
+      const nextFrames = (): Promise<unknown> =>
+        first.evaluate(
+          () =>
+            new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+        );
+      await first.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await nextFrames();
+      const scrolledTo = await first.evaluate(() => window.scrollY);
+      assert.ok(scrolledTo > 0);
+      // Click where the stuck bar is; Playwright's own scrolling into view would close the menu.
+      const triggerBox = await readerMenuTrigger.boundingBox();
+      assert.ok(triggerBox);
+      await first.mouse.click(triggerBox.x + 20, triggerBox.y + triggerBox.height / 2);
+      await first.waitForFunction(
+        () => document.activeElement?.closest('[role="dialog"]') instanceof HTMLElement,
+      );
+      await nextFrames();
+      assert.equal(await first.evaluate(() => window.scrollY), scrolledTo);
+      assert.equal(await readerMenuTrigger.getAttribute("aria-expanded"), "true");
+      await first.getByRole("dialog").getByRole("link", { name: "Architecture" }).click();
+      await first.waitForURL(/#architecture$/u);
+      await first.setViewportSize({ height: 720, width: 1280 });
       await first.evaluate(() => window.scrollTo(0, 0));
       assert.equal(await first.locator("[data-api-status]").count(), 0);
       assert.equal(await first.locator(".cm-editor").count(), 0);
