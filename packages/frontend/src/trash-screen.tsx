@@ -17,6 +17,8 @@ import { ButtonLink } from "./components/button-link.tsx";
 import { ConfirmationDialog } from "./components/confirmation-dialog.tsx";
 import { EmptyMessage } from "./components/empty-message.tsx";
 import { useEffectAction } from "./effect-hooks.ts";
+import { atCurrentRevision } from "./trash-actions.ts";
+import type { TrashMutation } from "./trash-actions.ts";
 import { useHydrated } from "./use-hydrated.ts";
 import styles from "./trash-screen.module.css";
 import workspaceStyles from "./workspace.module.css";
@@ -26,22 +28,21 @@ export interface TrashScreenProps {
   readonly initialCatalog: CatalogResponse;
 }
 
-interface TrashMutation {
-  readonly documentId: string;
-  readonly expectedRevision: number;
-}
-
 export function TrashScreen({ api, initialCatalog }: TrashScreenProps): React.JSX.Element {
   const { showToast } = useAppContext();
   const { search } = useCurrentUrl();
   const formatDeletionDate = useHydrated() ? formatLocalDate : formatDate;
   const [catalog, setCatalog] = useState(initialCatalog);
   const [permanentCandidate, setPermanentCandidate] = useState<DocumentSummary>();
-  const restoreDocument = useEffectAction<TrashMutation, unknown, ApiError>(
-    ({ documentId, expectedRevision }) => api.restoreDocument(documentId, expectedRevision),
+  const restoreDocument = useEffectAction<TrashMutation, unknown, ApiError>((mutation) =>
+    atCurrentRevision(api, mutation, (revision) =>
+      api.restoreDocument(mutation.documentId, revision),
+    ),
   );
-  const hardDeleteDocument = useEffectAction<TrashMutation, void, ApiError>(
-    ({ documentId, expectedRevision }) => api.hardDeleteDocument(documentId, expectedRevision),
+  const hardDeleteDocument = useEffectAction<TrashMutation, void, ApiError>((mutation) =>
+    atCurrentRevision(api, mutation, (revision) =>
+      api.hardDeleteDocument(mutation.documentId, revision),
+    ),
   );
 
   useEffect(() => setCatalog(initialCatalog), [initialCatalog]);
