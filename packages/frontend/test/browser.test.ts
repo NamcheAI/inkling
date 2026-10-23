@@ -228,7 +228,7 @@ test(
       assert.ok(documentId);
       assert.match(documentId, /^doc_[0-9A-Za-z]+$/u);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       assert.equal(await first.title(), "Browser collaboration");
       assert.deepEqual(await first.locator("[data-breadcrumb]").allTextContents(), [
@@ -267,7 +267,7 @@ test(
       await first.keyboard.insertText("# Browser collaboration");
       await first.waitForFunction(() => document.title === "Browser collaboration");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       assert.equal(await first.locator("[data-api-status]").textContent(), "Saved");
       await titleLine.click();
@@ -281,7 +281,7 @@ test(
         () => document.querySelector("[data-preview]")?.textContent === "",
       );
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       assert.match(
         await first.locator(".cm-content").innerText(),
@@ -292,7 +292,7 @@ test(
       await first.keyboard.press("ControlOrMeta+End");
       await first.keyboard.insertText("\n\nHistory highlight target");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       const historyTargetLine = first.locator(".cm-line", {
         hasText: "History highlight target",
@@ -302,7 +302,7 @@ test(
       await first.keyboard.press("Shift+Home");
       await first.keyboard.insertText("History restore marker");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.locator("[data-history-toggle]").click();
       await first.waitForSelector("[data-history-dropdown]");
@@ -367,7 +367,7 @@ test(
             ?.textContent?.includes("History restore marker"),
       );
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       const restoredHistoryTarget = first.locator(".cm-line", {
         hasText: "History highlight target",
@@ -383,7 +383,7 @@ test(
             ?.textContent?.includes("History highlight target"),
       );
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
 
       const draftStateChip = first.locator("[data-preview-scroller] [data-lifecycle-state]");
@@ -511,7 +511,7 @@ test(
       assert.doesNotMatch(await first.locator("[data-reader]").innerText(), /architecture/u);
       await first.locator("[data-open-editor]").click();
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.locator(".cm-content").click();
       await first.keyboard.press("ControlOrMeta+End");
@@ -528,7 +528,7 @@ test(
       );
       assert.equal(await first.locator('body > div[id^="dinkling-mermaid-"]').count(), 0);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       const editorKeyword = first.locator(".cm-content .tok-keyword").last();
       assert.equal(await editorKeyword.textContent(), "const");
@@ -539,7 +539,7 @@ test(
       await first.keyboard.press("Shift+Home");
       await first.keyboard.insertText("visibility: publi");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.waitForFunction(
         () => document.querySelector("[data-publish]")?.textContent === "Fix frontmatter",
@@ -560,7 +560,7 @@ test(
       await first.locator("[data-publish]").click();
       assert.equal((await publication).status(), 200);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.waitForFunction(
         () => document.querySelector("[data-publish]")?.textContent === "Publish",
@@ -569,7 +569,7 @@ test(
       await first.keyboard.press("ControlOrMeta+End");
       await first.keyboard.insertText("\n\nPublished follow-up");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.waitForFunction(
         () => document.querySelector("[data-publish]")?.textContent === "Publish Changes",
@@ -588,7 +588,7 @@ test(
       assert.doesNotMatch(await first.locator("[data-reader]").innerText(), /Published follow-up/u);
       await first.locator("[data-open-editor]").click();
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       const changedPublication = first.waitForResponse(
         (response) => response.request().method() === "POST" && response.url().endsWith("/publish"),
@@ -733,7 +733,7 @@ test(
         );
       await first.waitForURL(/\/documents\/[^/]+\/edit$/u);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.getByRole("link", { name: "Inkling home" }).click();
       await first.waitForSelector("[data-document-search]");
@@ -847,7 +847,7 @@ test(
       await first.locator("[data-open-editor]").click();
       await first.waitForURL(/\/rfc\/0001\/edit$/u);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       assert.equal(await first.locator("[data-api-status]").textContent(), "Saved");
       assert.equal(
@@ -1403,7 +1403,7 @@ test(
       });
       await first.goto(`${baseUrl}/documents/${wrappedDocumentId}/edit`);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.evaluate(async () => {
         const source = document.querySelector<HTMLElement>(".cm-scroller");
@@ -1558,7 +1558,7 @@ test(
       await first.keyboard.press("End");
       await first.keyboard.insertText(" It remains editable.");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.getByRole("link", { name: "In Trash", exact: true }).click();
       await first.waitForURL(`${baseUrl}/trash`);

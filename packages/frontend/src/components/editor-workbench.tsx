@@ -117,7 +117,7 @@ export function EditorWorkbench({
               ? "Markdown"
               : `${previewLabel ?? "Historical version"} · Markdown`}
           </span>
-          <span data-save-state="">
+          <span data-save-state={historyBody === undefined ? connectionState : "history"}>
             {historyBody === undefined ? connectionLabel(connectionState) : "Read-only history"}
           </span>
         </div>
@@ -606,7 +606,9 @@ export function connectionLabel(state: ConnectionState): string {
     connecting: "Connecting",
     disconnected: "Offline — edits unsaved",
     ready: "Saved",
-    saving: "Saving…",
+    // Acknowledgement normally takes milliseconds; only a stalled save is worth showing.
+    saving: "Saved",
+    unsaved: "Not saved",
   };
   return labels[state];
 }

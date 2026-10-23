@@ -25,7 +25,14 @@ import {
 
 const remoteOrigin = Symbol("inkling-remote-update");
 
-export type ConnectionState = "connecting" | "disconnected" | "ready" | "saving";
+/**
+ * `saving` means local edits await acknowledgement; `unsaved` means the oldest of them has
+ * waited longer than {@link unsavedAfterMilliseconds}.
+ */
+export type ConnectionState = "connecting" | "disconnected" | "ready" | "saving" | "unsaved";
+
+/** How long a local edit may await acknowledgement before it is reported as unsaved. */
+export const unsavedAfterMilliseconds = 3_000;
 
 export interface CollaborationCallbacks {
   readonly onComments: (comments: CommentStateDto) => void;
@@ -62,7 +69,42 @@ export function makeCollaborationClient(
     let reconnectTimer: number | undefined;
     let stopped = false;
     let welcomed = false;
-    const unacknowledged = new Map<string, Uint8Array>();
+    let reportedState: ConnectionState | undefined;
+    let unsavedTimer: number | undefined;
+    const unacknowledged = new Map<
+      string,
+      { readonly queuedAt: number; readonly update: Uint8Array }
+    >();
+
+    const clearUnsavedTimer = (): void => {
+      if (unsavedTimer === undefined) return;
+      window.clearTimeout(unsavedTimer);
+      unsavedTimer = undefined;
+    };
+
+    const reportState = (state: ConnectionState): void => {
+      if (state !== "saving" && state !== "unsaved") clearUnsavedTimer();
+      if (state === reportedState) return;
+      reportedState = state;
+      callbacks.onState(state);
+    };
+
+    /** Reports acknowledgement progress, escalating to `unsaved` once the oldest edit stalls. */
+    const reportPendingState = (): void => {
+      clearUnsavedTimer();
+      const oldest = unacknowledged.values().next();
+      if (oldest.done === true) {
+        reportState("ready");
+        return;
+      }
+      const remaining = oldest.value.queuedAt + unsavedAfterMilliseconds - Date.now();
+      if (remaining <= 0) {
+        reportState("unsaved");
+        return;
+      }
+      reportState("saving");
+      unsavedTimer = window.setTimeout(reportPendingState, remaining);
+    };
     const flushWaiters = new Set<{
       readonly fail: (error: CollaborationClientError) => void;
       readonly succeed: () => void;
@@ -160,10 +202,10 @@ export function makeCollaborationClient(
                 sendMessage({
                   clientUpdateId,
                   type: "body-update",
-                  update: encodeBase64(pending),
+                  update: encodeBase64(pending.update),
                 });
               }
-              callbacks.onState(unacknowledged.size === 0 ? "ready" : "saving");
+              reportPendingState();
               settleFlushWaiters();
             });
             break;
@@ -184,7 +226,7 @@ export function makeCollaborationClient(
             yield* Effect.sync(() => {
               unacknowledged.delete(message.clientUpdateId);
               callbacks.onRevision(message.documentRevision);
-              callbacks.onState(unacknowledged.size === 0 ? "ready" : "saving");
+              reportPendingState();
               settleFlushWaiters();
             });
             break;
@@ -217,7 +259,7 @@ export function makeCollaborationClient(
       if (stopped) {
         return;
       }
-      callbacks.onState("connecting");
+      reportState("connecting");
       const url = new URL(`/api/documents/${encodeURIComponent(documentId)}/ws`, location.href);
       url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
       if (capabilityToken !== undefined) {
@@ -260,12 +302,12 @@ export function makeCollaborationClient(
         if (stopped) {
           return;
         }
-        callbacks.onState("disconnected");
+        reportState("disconnected");
         reconnectTimer = window.setTimeout(connect, 1_500);
       });
       socket.addEventListener("error", () => {
         if (!welcomed) {
-          callbacks.onState("disconnected");
+          reportState("disconnected");
         }
       });
     };
@@ -278,8 +320,9 @@ export function makeCollaborationClient(
         identifierTag.clientUpdate,
         uuidV7Bytes(Date.now(), crypto.getRandomValues(new Uint8Array(10))),
       );
-      unacknowledged.set(clientUpdateId, update);
-      callbacks.onState(socket?.readyState === WebSocket.OPEN ? "saving" : "disconnected");
+      unacknowledged.set(clientUpdateId, { queuedAt: Date.now(), update });
+      if (socket?.readyState !== WebSocket.OPEN) reportState("disconnected");
+      else if (welcomed) reportPendingState();
       sendMessage({ clientUpdateId, type: "body-update", update: encodeBase64(update) });
     };
     document.on("update", updateHandler);
@@ -292,6 +335,7 @@ export function makeCollaborationClient(
         if (reconnectTimer !== undefined) {
           window.clearTimeout(reconnectTimer);
         }
+        clearUnsavedTimer();
         document.off("update", updateHandler);
         socket?.close(1000, "editor_closed");
       }),

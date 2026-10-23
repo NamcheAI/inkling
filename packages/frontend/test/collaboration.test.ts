@@ -6,8 +6,8 @@ import * as Y from "yjs";
 
 import { decodeBase64, encodeBase64 } from "@earendil-works/inkling-collaboration";
 
-import { makeCollaborationClient } from "../src/collaboration.ts";
-import type { ConnectionState } from "../src/collaboration.ts";
+import { makeCollaborationClient, unsavedAfterMilliseconds } from "../src/collaboration.ts";
+import type { CollaborationCallbacks, ConnectionState } from "../src/collaboration.ts";
 
 interface FakeSocketEvent {
   readonly data?: unknown;
@@ -53,11 +53,22 @@ class FakeWebSocket {
   }
 }
 
-test("edits made before the collaboration welcome remain pending until acknowledged", async () => {
+interface CollaborationHarness {
+  readonly sockets: readonly FakeWebSocket[];
+  /** Scheduled `window.setTimeout` callbacks when timers are manual. */
+  readonly timers: Map<number, () => void>;
+}
+
+async function withCollaborationGlobals(
+  options: { readonly manualTimers: boolean },
+  run: (harness: CollaborationHarness) => Promise<void>,
+): Promise<void> {
   const originalWebSocket = Object.getOwnPropertyDescriptor(globalThis, "WebSocket");
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   const originalLocation = Object.getOwnPropertyDescriptor(globalThis, "location");
   const sockets: FakeWebSocket[] = [];
+  const timers = new Map<number, () => void>();
+  let nextTimer = 1;
   class TestWebSocket extends FakeWebSocket {
     constructor() {
       super();
@@ -71,109 +82,221 @@ test("edits made before the collaboration welcome remain pending until acknowled
   });
   Object.defineProperty(globalThis, "window", {
     configurable: true,
-    value: {
-      clearTimeout: globalThis.clearTimeout.bind(globalThis),
-      setTimeout: globalThis.setTimeout.bind(globalThis),
-    },
+    value: options.manualTimers
+      ? {
+          clearTimeout: (id: number) => timers.delete(id),
+          setTimeout: (callback: () => void) => {
+            const id = nextTimer++;
+            timers.set(id, callback);
+            return id;
+          },
+        }
+      : {
+          clearTimeout: globalThis.clearTimeout.bind(globalThis),
+          setTimeout: globalThis.setTimeout.bind(globalThis),
+        },
   });
   Object.defineProperty(globalThis, "location", {
     configurable: true,
     value: new URL("http://inkling.example/documents/document_test/edit"),
   });
 
-  const localDocument = new Y.Doc();
-  const serverDocument = new Y.Doc();
-  serverDocument.getText("body").insert(0, "# Server title\n");
-  const states: ConnectionState[] = [];
-
   try {
-    const client = await Effect.runPromise(
-      makeCollaborationClient("document_test", localDocument, undefined, undefined, {
-        onComments: () => undefined,
-        onError: (message) => assert.fail(message),
-        onMetadata: () => undefined,
-        onPermissions: () => undefined,
-        onPresence: () => undefined,
-        onPresenceLeft: () => undefined,
-        onRevision: () => undefined,
-        onState: (state) => states.push(state),
-      }),
-    );
-    const socket = sockets[0];
-    assert.ok(socket);
-
-    localDocument.getText("body").insert(0, "typed before welcome");
-    socket.open();
-    await waitFor(() => socket.sent.some((payload) => JSON.parse(payload).type === "hello"));
-
-    socket.receive(
-      JSON.stringify({
-        actions: ["edit-body", "read-working"],
-        comments: { revision: 0, threads: [] },
-        metadata: {
-          approvers: [],
-          authors: [],
-          createdAt: "2026-01-01T00:00:00.000Z",
-          headRevision: 0,
-          id: "document_test",
-          labels: [],
-          lifecycleState: "draft",
-          relatedDocuments: [],
-          reviewers: [],
-          sharing: { access: "disabled", generation: 0 },
-          title: "Server title",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-          visibility: "private",
-        },
-        protocolVersion: 1,
-        sequence: 0,
-        stateUpdate: encodeBase64(Y.encodeStateAsUpdate(serverDocument)),
-        type: "welcome",
-      }),
-    );
-
-    await waitFor(() => states.at(-1) === "saving");
-    const updateMessage = await waitForValue(() =>
-      socket.sent
-        .map((payload) => JSON.parse(payload) as Readonly<Record<string, unknown>>)
-        .find((message) => message["type"] === "body-update"),
-    );
-    assert.equal(states.at(-1), "saving");
-
-    let flushed = false;
-    const flush = Effect.runPromise(client.flush).then(() => {
-      flushed = true;
-      return undefined;
-    });
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    assert.equal(flushed, false);
-
-    const encodedUpdate = updateMessage["update"];
-    const clientUpdateId = updateMessage["clientUpdateId"];
-    assert.equal(typeof encodedUpdate, "string");
-    assert.equal(typeof clientUpdateId, "string");
-    Y.applyUpdate(serverDocument, await Effect.runPromise(decodeBase64(encodedUpdate)));
-    assert.match(serverDocument.getText("body").toString(), /typed before welcome/u);
-
-    socket.receive(
-      JSON.stringify({
-        clientUpdateId,
-        documentRevision: 1,
-        serverSequence: 1,
-        type: "update-accepted",
-      }),
-    );
-    await flush;
-    assert.equal(states.at(-1), "ready");
-    await Effect.runPromise(client.close);
+    await run({ sockets, timers });
   } finally {
-    localDocument.destroy();
-    serverDocument.destroy();
     restoreGlobal("WebSocket", originalWebSocket);
     restoreGlobal("window", originalWindow);
     restoreGlobal("location", originalLocation);
   }
+}
+
+function testCallbacks(states: ConnectionState[]): CollaborationCallbacks {
+  return {
+    onComments: () => undefined,
+    onError: (message) => assert.fail(message),
+    onMetadata: () => undefined,
+    onPermissions: () => undefined,
+    onPresence: () => undefined,
+    onPresenceLeft: () => undefined,
+    onRevision: () => undefined,
+    onState: (state) => states.push(state),
+  };
+}
+
+function welcomeMessage(serverDocument: Y.Doc): string {
+  return JSON.stringify({
+    actions: ["edit-body", "read-working"],
+    comments: { revision: 0, threads: [] },
+    metadata: {
+      approvers: [],
+      authors: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      headRevision: 0,
+      id: "document_test",
+      labels: [],
+      lifecycleState: "draft",
+      relatedDocuments: [],
+      reviewers: [],
+      sharing: { access: "disabled", generation: 0 },
+      title: "Server title",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      visibility: "private",
+    },
+    protocolVersion: 1,
+    sequence: 0,
+    stateUpdate: encodeBase64(Y.encodeStateAsUpdate(serverDocument)),
+    type: "welcome",
+  });
+}
+
+test("edits made before the collaboration welcome remain pending until acknowledged", async () => {
+  await withCollaborationGlobals({ manualTimers: false }, async ({ sockets }) => {
+    const localDocument = new Y.Doc();
+    const serverDocument = new Y.Doc();
+    serverDocument.getText("body").insert(0, "# Server title\n");
+    const states: ConnectionState[] = [];
+
+    try {
+      const client = await Effect.runPromise(
+        makeCollaborationClient(
+          "document_test",
+          localDocument,
+          undefined,
+          undefined,
+          testCallbacks(states),
+        ),
+      );
+      const socket = sockets[0];
+      assert.ok(socket);
+
+      localDocument.getText("body").insert(0, "typed before welcome");
+      socket.open();
+      await waitFor(() => socket.sent.some((payload) => JSON.parse(payload).type === "hello"));
+
+      socket.receive(welcomeMessage(serverDocument));
+
+      await waitFor(() => states.at(-1) === "saving");
+      const updateMessage = await waitForValue(() =>
+        socket.sent
+          .map((payload) => JSON.parse(payload) as Readonly<Record<string, unknown>>)
+          .find((message) => message["type"] === "body-update"),
+      );
+      assert.equal(states.at(-1), "saving");
+
+      let flushed = false;
+      const flush = Effect.runPromise(client.flush).then(() => {
+        flushed = true;
+        return undefined;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.equal(flushed, false);
+
+      const encodedUpdate = updateMessage["update"];
+      const clientUpdateId = updateMessage["clientUpdateId"];
+      assert.equal(typeof encodedUpdate, "string");
+      assert.equal(typeof clientUpdateId, "string");
+      Y.applyUpdate(serverDocument, await Effect.runPromise(decodeBase64(encodedUpdate)));
+      assert.match(serverDocument.getText("body").toString(), /typed before welcome/u);
+
+      socket.receive(
+        JSON.stringify({
+          clientUpdateId,
+          documentRevision: 1,
+          serverSequence: 1,
+          type: "update-accepted",
+        }),
+      );
+      await flush;
+      assert.equal(states.at(-1), "ready");
+      await Effect.runPromise(client.close);
+    } finally {
+      localDocument.destroy();
+      serverDocument.destroy();
+    }
+  });
 });
+
+test("an edit is reported unsaved only after its acknowledgement stalls", async () => {
+  await withCollaborationGlobals({ manualTimers: true }, async ({ sockets, timers }) => {
+    const localDocument = new Y.Doc();
+    const serverDocument = new Y.Doc();
+    const states: ConnectionState[] = [];
+    const realNow = Date.now;
+    let now = realNow();
+    Date.now = () => now;
+    const runTimers = (): void => {
+      const due = [...timers.values()];
+      timers.clear();
+      for (const callback of due) callback();
+    };
+
+    try {
+      const client = await Effect.runPromise(
+        makeCollaborationClient(
+          "document_test",
+          localDocument,
+          undefined,
+          undefined,
+          testCallbacks(states),
+        ),
+      );
+      const socket = sockets[0];
+      assert.ok(socket);
+      socket.open();
+      socket.receive(welcomeMessage(serverDocument));
+      await waitFor(() => states.at(-1) === "ready");
+
+      localDocument.getText("body").insert(0, "first");
+      const firstId = await waitForValue(() => lastClientUpdateId(socket));
+      assert.equal(states.at(-1), "saving");
+
+      now += unsavedAfterMilliseconds - 1;
+      localDocument.getText("body").insert(0, "second ");
+      const secondId = await waitForValue(() => {
+        const id = lastClientUpdateId(socket);
+        return id === firstId ? undefined : id;
+      });
+      socket.receive(acceptedMessage(firstId, 1));
+      await waitFor(() => states.filter((state) => state === "saving").length === 1);
+      assert.equal(states.at(-1), "saving");
+
+      now += unsavedAfterMilliseconds - 1;
+      runTimers();
+      assert.equal(states.at(-1), "saving", "the oldest pending edit has not stalled yet");
+
+      now += 1;
+      runTimers();
+      assert.equal(states.at(-1), "unsaved");
+
+      socket.receive(acceptedMessage(secondId, 2));
+      await waitFor(() => states.at(-1) === "ready");
+      assert.equal(timers.size, 0);
+      assert.deepEqual(states, ["connecting", "ready", "saving", "unsaved", "ready"]);
+      await Effect.runPromise(client.close);
+    } finally {
+      Date.now = realNow;
+      localDocument.destroy();
+      serverDocument.destroy();
+    }
+  });
+});
+
+function lastClientUpdateId(socket: FakeWebSocket): string | undefined {
+  const message = socket.sent
+    .map((payload) => JSON.parse(payload) as Readonly<Record<string, unknown>>)
+    .findLast((candidate) => candidate["type"] === "body-update");
+  const id = message?.["clientUpdateId"];
+  return typeof id === "string" ? id : undefined;
+}
+
+function acceptedMessage(clientUpdateId: string, documentRevision: number): string {
+  return JSON.stringify({
+    clientUpdateId,
+    documentRevision,
+    serverSequence: documentRevision,
+    type: "update-accepted",
+  });
+}
 
 async function waitFor(predicate: () => boolean, timeout = 2_000): Promise<void> {
   return waitUntil(predicate, Date.now() + timeout);
