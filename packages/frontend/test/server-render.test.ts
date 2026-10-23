@@ -158,6 +158,25 @@ test("RFC pages resolve the number and ask for the authentication status once", 
   assert.equal(requests.filter((request) => request.path === "/api/auth/status").length, 1);
 });
 
+test("RFC pages look the number up while the authentication status loads", async () => {
+  const lookup = Promise.withResolvers<void>();
+  const respond = api({
+    "/api/auth/status": authenticated,
+    "/api/documents?q=rfc%3A7": { documents: [{ excerpt: "", metadata }], people: [] },
+    [`/api/documents/${metadata.id}?published=true`]: document,
+  });
+  const response = render("/rfc/0007", async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/documents" && url.search === "?q=rfc%3A7") lookup.resolve();
+    // The status only answers once the lookup was sent, so asking for
+    // them one after the other would never finish.
+    if (url.pathname === "/api/auth/status") await lookup.promise;
+    return respond(request);
+  });
+  assert.ok(response);
+  assert.match(await response.text(), /data-reader=""/u);
+});
+
 test("workspace pages render the catalog for the query in the address", async () => {
   const catalog: CatalogResponse = {
     documents: [{ excerpt: "Pages render before scripts load.", metadata }],
@@ -179,19 +198,32 @@ test("workspace pages render the catalog for the query in the address", async ()
 });
 
 test("editor pages leave the editor to the browser but embed its data", async () => {
+  const requests: RecordedRequest[] = [];
   const response = render(
     `/documents/${metadata.id}/edit`,
-    api({
-      "/api/auth/status": authenticated,
-      "/api/documents?q=": { documents: [], people: [] },
-      [`/api/documents/${metadata.id}`]: document,
-    }),
+    api(
+      {
+        "/api/auth/status": authenticated,
+        "/api/documents?q=": { documents: [], people: [] },
+        [`/api/documents/${metadata.id}`]: document,
+      },
+      requests,
+    ),
   );
   assert.ok(response);
   const html = await response.text();
   assert.match(html, /<!--\$!--><template data-dgst="inkling-client-only">/u);
   assert.match(html, /modulepreload[^>]+editor-screen-/u);
-  assert.equal((initialRoute(html) as { route: { screen: string } }).route.screen, "editor");
+  const embedded = initialRoute(html) as {
+    route: { frontmatterVocabulary: { labels: readonly string[] }; screen: string };
+  };
+  assert.equal(embedded.route.screen, "editor");
+  assert.deepEqual(embedded.route.frontmatterVocabulary.labels, ["platform"]);
+  // The editor loads the catalog for frontmatter completion after it opens.
+  assert.deepEqual(requests.map((request) => request.path).toSorted(), [
+    "/api/auth/status",
+    `/api/documents/${metadata.id}`,
+  ]);
 });
 
 test("pages whose data cannot load fall back to the static shell", async () => {

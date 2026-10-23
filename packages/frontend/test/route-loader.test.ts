@@ -5,7 +5,7 @@ import { Effect, Either } from "effect";
 
 import type { AuthenticationStatus } from "@earendil-works/inkling-protocol";
 
-import { makeApiClient } from "../src/api.ts";
+import { makeApiClient, makeAuthenticationCache } from "../src/api.ts";
 import { loadRoute } from "../src/route-loader.ts";
 import type { RouteEnvironment } from "../src/route-loader.ts";
 import { signInHref } from "../src/ui.ts";
@@ -94,4 +94,75 @@ test("sign-in returns to the page that asked for it", () => {
     signInHref(new URL("https://inkling.test/documents/doc_0123456789/edit?cap=x#intro")),
     `/api/auth/google/start?next=${encodeURIComponent("/documents/doc_0123456789/edit?cap=x#intro")}`,
   );
+});
+
+test("the browser remembers the authentication status until a request is refused", async () => {
+  const authentication = makeAuthenticationCache();
+  const requests: string[] = [];
+  let sessionEnded = false;
+  const document = {
+    body: "# Remembered",
+    comments: { revision: 0, threads: [] },
+    metadata: {
+      approvers: [],
+      authors: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      headRevision: 1,
+      id: "doc_0123456789",
+      labels: [],
+      lifecycleState: "draft",
+      relatedDocuments: [],
+      reviewers: [],
+      sharing: { access: "disabled", generation: 0 },
+      title: "Remembered",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      visibility: "private",
+    },
+    sequence: 1,
+  };
+  const remembering: RouteEnvironment = {
+    api: (capabilityToken) =>
+      makeApiClient(
+        capabilityToken,
+        (path) => {
+          requests.push(path);
+          if (path === "/api/auth/status") {
+            return Promise.resolve(
+              Response.json(
+                sessionEnded
+                  ? { authenticated: false }
+                  : {
+                      authenticated: true,
+                      principal: { displayName: "Ada", id: "ada", role: "member" },
+                    },
+              ),
+            );
+          }
+          return Promise.resolve(
+            sessionEnded
+              ? Response.json(
+                  { code: "unauthenticated", message: "Sign in.", retryable: false },
+                  { status: 401 },
+                )
+              : Response.json(document),
+          );
+        },
+        authentication,
+      ),
+    preloadDocumentScreen: () => Promise.resolve(),
+  };
+  const load = (path: string) =>
+    Effect.runPromise(
+      Effect.either(loadRoute(new URL(`https://inkling.test${path}`), remembering)),
+    );
+
+  await load("/documents/doc_0123456789/edit");
+  await load("/documents/doc_0123456789/edit");
+  assert.equal(requests.filter((path) => path === "/api/auth/status").length, 1);
+
+  sessionEnded = true;
+  const refused = await load("/documents/doc_0123456789/edit");
+  assert.ok(Either.isLeft(refused));
+  // The refusal forgot the remembered status, and the retry asked again.
+  assert.equal(requests.filter((path) => path === "/api/auth/status").length, 2);
 });

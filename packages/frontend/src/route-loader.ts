@@ -1,14 +1,8 @@
-import { Effect } from "effect";
-
-import type {
-  CatalogResponse,
-  DocumentResponse,
-  PersonDto,
-} from "@earendil-works/inkling-protocol";
+import { Effect, Option } from "effect";
 
 import { ApiError } from "./api.ts";
 import type { ApiClientService } from "./api.ts";
-import type { FrontmatterVocabulary } from "./frontmatter-completion.ts";
+import { accountPerson, collectFrontmatterVocabulary } from "./frontmatter-completion.ts";
 import type { RouteModel } from "./route-data.ts";
 import { formatRfcNumber } from "./ui.ts";
 
@@ -35,11 +29,21 @@ export function loadRoute(
   environment: RouteEnvironment,
 ): Effect.Effect<RouteModel, ApiError> {
   const capabilityToken = url.searchParams.get("cap") ?? undefined;
-  const client = environment.api(capabilityToken);
-  // Several steps of a route need the authentication status; ask once.
-  return Effect.cached(client.authenticationStatus).pipe(
-    Effect.flatMap((authenticationStatus) =>
-      loadRouteWith(url, environment, capabilityToken, { ...client, authenticationStatus }),
+  const load = Effect.suspend(() => {
+    const client = environment.api(capabilityToken);
+    // Several steps of a route need the authentication status; ask once.
+    return Effect.cached(client.authenticationStatus).pipe(
+      Effect.flatMap((authenticationStatus) =>
+        loadRouteWith(url, environment, capabilityToken, { ...client, authenticationStatus }),
+      ),
+    );
+  });
+  // The browser remembers the status between routes; a refusal means the
+  // session ended since, so the route loads once more with a fresh status.
+  return load.pipe(
+    Effect.catchIf(
+      (error) => error.status === 401,
+      () => load,
     ),
   );
 }
@@ -153,11 +157,19 @@ function loadRfcRoute(
   number: number,
   screen: "editor" | "reader",
 ): Effect.Effect<RouteModel, ApiError> {
-  return api.authenticationStatus.pipe(
-    Effect.flatMap((authentication) =>
-      authentication.authenticated
-        ? api.listDocuments(`rfc:${number}`)
-        : api.listPublicDocuments(String(number)),
+  // Most readers of an RFC page are signed in, so look the number up in
+  // the workspace catalog while the status loads; anonymous readers, who
+  // cannot read it, look it up among public RFCs once the status says so.
+  return Effect.all(
+    [api.authenticationStatus, api.listDocuments(`rfc:${number}`).pipe(Effect.option)],
+    { concurrency: "unbounded" },
+  ).pipe(
+    Effect.flatMap(([authentication, workspaceCatalog]) =>
+      authentication.authenticated && Option.isSome(workspaceCatalog)
+        ? Effect.succeed(workspaceCatalog.value)
+        : authentication.authenticated
+          ? api.listDocuments(`rfc:${number}`)
+          : api.listPublicDocuments(String(number)),
     ),
     Effect.flatMap((catalog) => {
       const document = catalog.documents.find(
@@ -260,69 +272,21 @@ function loadDocumentRoute(
       concurrency: "unbounded",
     },
   ).pipe(
-    Effect.flatMap(([document, authentication]) =>
-      (screen === "editor" && !shared && authentication.authenticated
-        ? api.listDocuments().pipe(Effect.catchAll(() => Effect.succeed(undefined)))
-        : Effect.succeed(undefined)
-      ).pipe(
-        Effect.map((catalog): RouteModel => ({
-          account: authentication.authenticated ? authentication.principal : undefined,
-          api,
-          capabilityToken,
-          document,
-          frontmatterVocabulary: collectFrontmatterVocabulary(
-            document,
-            catalog,
-            accountPerson(authentication.principal),
-          ),
-          publicDocument: !authentication.authenticated && !shared,
-          screen,
-          shared,
-        })),
+    // The editor completes frontmatter from the whole catalog, but loads it
+    // after it opens; the route only waits for what it shows first.
+    Effect.map(([document, authentication]): RouteModel => ({
+      account: authentication.authenticated ? authentication.principal : undefined,
+      api,
+      capabilityToken,
+      document,
+      frontmatterVocabulary: collectFrontmatterVocabulary(
+        document,
+        undefined,
+        accountPerson(authentication.principal),
       ),
-    ),
+      publicDocument: !authentication.authenticated && !shared,
+      screen,
+      shared,
+    })),
   );
-}
-
-function accountPerson(
-  person:
-    | {
-        readonly displayName: string;
-        readonly email?: string | undefined;
-        readonly id: string;
-      }
-    | undefined,
-): readonly PersonDto[] {
-  return person?.email === undefined
-    ? []
-    : [{ displayName: person.displayName, email: person.email, id: person.id }];
-}
-
-function collectFrontmatterVocabulary(
-  document: DocumentResponse,
-  catalog: CatalogResponse | undefined,
-  accountPeople: readonly PersonDto[],
-): FrontmatterVocabulary {
-  const metadata = [
-    document.metadata,
-    ...(catalog?.documents.map((summary) => summary.metadata) ?? []),
-  ];
-  const people = [
-    ...accountPeople,
-    ...(catalog?.people ?? []),
-    ...metadata.flatMap((item) => [...item.authors, ...item.reviewers, ...item.approvers]),
-  ];
-  return {
-    labels: [...new Set(metadata.flatMap((item) => item.labels))].toSorted((left, right) =>
-      left.localeCompare(right),
-    ),
-    people: [
-      ...new Map(
-        people.map((person) => [person.email.toLocaleLowerCase("en"), person] as const),
-      ).values(),
-    ],
-    states: [...new Set(metadata.map((item) => item.lifecycleState))].toSorted((left, right) =>
-      left.localeCompare(right),
-    ),
-  };
 }

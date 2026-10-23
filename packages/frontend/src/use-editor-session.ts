@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { autocompletion } from "@codemirror/autocomplete";
+import type { CompletionSource } from "@codemirror/autocomplete";
 import { markdown } from "@codemirror/lang-markdown";
 import { yamlFrontmatter, yamlLanguage } from "@codemirror/lang-yaml";
 import { syntaxHighlighting } from "@codemirror/language";
@@ -95,6 +96,10 @@ export function useEditorSession(options: UseEditorSessionOptions): EditorSessio
   } = options;
   const callbacksRef = useRef<EditorSessionCallbacks>(callbacks);
   callbacksRef.current = callbacks;
+  // The vocabulary grows once the catalog loads; completions read the latest
+  // one instead of reconnecting the session.
+  const vocabularyRef = useRef(frontmatterVocabulary);
+  vocabularyRef.current = frontmatterVocabulary;
   const editorHostRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<EditorSession | undefined>(undefined);
   const [body, setBody] = useState(initialBody);
@@ -111,7 +116,15 @@ export function useEditorSession(options: UseEditorSessionOptions): EditorSessio
     const participantId = randomId(identifierTag.participant);
     const participantColor = colorFor(identityId ?? participantId);
     const participantMap = new Map<string, PresenceDto>();
-    const frontmatterCompletion = makeFrontmatterCompletionSource(frontmatterVocabulary);
+    let completionVocabulary = vocabularyRef.current;
+    let completionSource = makeFrontmatterCompletionSource(completionVocabulary);
+    const frontmatterCompletion: CompletionSource = (context) => {
+      if (completionVocabulary !== vocabularyRef.current) {
+        completionVocabulary = vocabularyRef.current;
+        completionSource = makeFrontmatterCompletionSource(completionVocabulary);
+      }
+      return completionSource(context);
+    };
     let client: CollaborationClient | undefined;
     const editor = new EditorView({
       parent,
@@ -227,15 +240,7 @@ export function useEditorSession(options: UseEditorSessionOptions): EditorSessio
       sessionRef.current = undefined;
       callbacksRef.current.onParticipants([]);
     };
-  }, [
-    capabilityToken,
-    displayName,
-    documentId,
-    frontmatterVocabulary,
-    identityId,
-    initiallyEditable,
-    shared,
-  ]);
+  }, [capabilityToken, displayName, documentId, identityId, initiallyEditable, shared]);
 
   return { body, editorHostRef, sessionRef, sessionRevision, yRevision };
 }

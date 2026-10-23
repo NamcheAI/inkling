@@ -152,13 +152,37 @@ export function apiClientLayer(capabilityToken?: string): Layer.Layer<ApiClientS
   return Layer.succeed(ApiClient, makeApiClient(capabilityToken));
 }
 
+/**
+ * Remembers authentication statuses between route loads in one page, per
+ * capability token, so navigating does not ask again each time. Signing
+ * out, or any request refused with 401, forgets them.
+ */
+export interface AuthenticationCache {
+  readonly forget: () => void;
+  readonly get: (key: string) => AuthenticationStatus | undefined;
+  readonly set: (key: string, status: AuthenticationStatus) => void;
+}
+
+export function makeAuthenticationCache(): AuthenticationCache {
+  const statuses = new Map<string, AuthenticationStatus>();
+  return {
+    forget: () => statuses.clear(),
+    get: (key) => statuses.get(key),
+    set: (key, status) => {
+      statuses.set(key, status);
+    },
+  };
+}
+
 /** Sends an API request for a same-origin path; `fetch` in the browser. */
 export type ApiTransport = (path: string, init: RequestInit) => Promise<Response>;
 
 export function makeApiClient(
   capabilityToken?: string,
   transport: ApiTransport = (path, init) => fetch(path, init),
+  authentication?: AuthenticationCache,
 ): ApiClientService {
+  const authenticationKey = capabilityToken ?? "";
   const withCapability = (url: string): string => {
     if (capabilityToken === undefined) {
       return url;
@@ -248,6 +272,10 @@ export function makeApiClient(
           ),
         ),
       ),
+      // A refused request means a remembered status may be stale.
+      Effect.tapError((error) =>
+        error.status === 401 ? Effect.sync(() => authentication?.forget()) : Effect.void,
+      ),
     );
 
   const mutation = <A, I>(
@@ -268,7 +296,16 @@ export function makeApiClient(
         DocumentMetadataSchema,
         "POST",
       ),
-    authenticationStatus: request("/api/auth/status", AuthenticationStatusSchema),
+    authenticationStatus: Effect.suspend(() => {
+      const cached = authentication?.get(authenticationKey);
+      return cached === undefined
+        ? request("/api/auth/status", AuthenticationStatusSchema).pipe(
+            Effect.tap((status) =>
+              Effect.sync(() => authentication?.set(authenticationKey, status)),
+            ),
+          )
+        : Effect.succeed(cached);
+    }),
     createApiKey: (label) => mutation("/api/api-keys", ApiKeyCreatedSchema, "POST", { label }),
     createDocument: (input) => mutation("/api/documents", DocumentResponseSchema, "POST", input),
     createThread: (documentId, anchor, body, authorDisplayName) =>
@@ -324,7 +361,10 @@ export function makeApiClient(
       request(`/api/documents?q=${encodeURIComponent(query)}`, CatalogResponseSchema),
     listPublicDocuments: (query = "") =>
       request(`/api/public/documents?q=${encodeURIComponent(query)}`, CatalogResponseSchema),
-    logout: mutation("/api/auth/logout", Schema.Unknown, "POST").pipe(Effect.asVoid),
+    logout: mutation("/api/auth/logout", Schema.Unknown, "POST").pipe(
+      Effect.ensuring(Effect.sync(() => authentication?.forget())),
+      Effect.asVoid,
+    ),
     publish: (documentId) =>
       mutation(
         `/api/documents/${encodeURIComponent(documentId)}/publish`,

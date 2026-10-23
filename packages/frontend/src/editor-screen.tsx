@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Effect } from "effect";
+import { Effect, Fiber } from "effect";
 
 import { Layout } from "@earendil-works/elanor-react";
 import type { AuthenticationStatus, DocumentResponse } from "@earendil-works/inkling-protocol";
@@ -17,8 +17,10 @@ import { connectionLabel, EditorWorkbench } from "./components/editor-workbench.
 import type { HistoryPreview } from "./components/history-control.tsx";
 import { GuestIdentityDialog } from "./components/guest-identity-dialog.tsx";
 import { useEffectAction } from "./effect-hooks.ts";
+import { browserRuntime } from "./effect-runtime.ts";
 import { useRenderedMarkdown } from "./markdown.tsx";
 import { documentHref, storedGuestName, storeGuestName } from "./ui.ts";
+import { accountPerson, collectFrontmatterVocabulary } from "./frontmatter-completion.ts";
 import type { FrontmatterVocabulary } from "./frontmatter-completion.ts";
 import { useEditorSession } from "./use-editor-session.ts";
 import styles from "./components/editor.module.css";
@@ -37,7 +39,7 @@ export function EditorScreen({
   api,
   capabilityToken,
   document: initial,
-  frontmatterVocabulary,
+  frontmatterVocabulary: initialVocabulary,
   shared,
 }: EditorScreenProps): React.JSX.Element {
   const { navigate, setHeaderDocument, setParticipants, setStatus, showToast } = useAppContext();
@@ -60,6 +62,13 @@ export function EditorScreen({
     void,
     ApiError
   >(({ documentId, expectedRevision }) => api.deleteDocument(documentId, expectedRevision));
+  const frontmatterVocabulary = useCatalogVocabulary(
+    api,
+    initial,
+    initialVocabulary,
+    account,
+    shared,
+  );
   const initiallyEditable = !shared || initial.metadata.sharing.access === "edit";
   const { body, editorHostRef, sessionRef, sessionRevision, yRevision } = useEditorSession({
     capabilityToken,
@@ -283,4 +292,34 @@ export function EditorScreen({
       ) : null}
     </Layout.Main>
   );
+}
+
+/**
+ * Completes frontmatter from the whole catalog for workspace members. The
+ * catalog loads after the editor opens, so opening never waits for it.
+ */
+function useCatalogVocabulary(
+  api: ApiClientService,
+  document: DocumentResponse,
+  initial: FrontmatterVocabulary,
+  account: EditorScreenProps["account"],
+  shared: boolean,
+): FrontmatterVocabulary {
+  const [vocabulary, setVocabulary] = useState(initial);
+  useEffect(() => {
+    if (shared || account === undefined) return;
+    const fiber = browserRuntime.runFork(
+      api.listDocuments().pipe(
+        Effect.match({
+          onFailure: () => undefined,
+          onSuccess: (catalog) =>
+            setVocabulary(collectFrontmatterVocabulary(document, catalog, accountPerson(account))),
+        }),
+      ),
+    );
+    return () => {
+      browserRuntime.runFork(Fiber.interrupt(fiber));
+    };
+  }, [account, api, document, shared]);
+  return vocabulary;
 }

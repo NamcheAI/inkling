@@ -4,7 +4,7 @@ import { Layout } from "@earendil-works/elanor-react";
 
 import type { PresenceDto } from "@earendil-works/inkling-protocol";
 
-import { makeApiClient } from "./api.ts";
+import { makeApiClient, makeAuthenticationCache } from "./api.ts";
 import { AppContext, LocationContext } from "./app-context.tsx";
 import type { AppContextValue, AppStatus, HeaderDocument, ToastKind } from "./app-context.tsx";
 import { AppHeader } from "./components/app-header.tsx";
@@ -20,8 +20,10 @@ import { isApplicationPath, loadRoute } from "./route-loader.ts";
 import type { RouteEnvironment } from "./route-loader.ts";
 import { formatRfcNumber } from "./ui.ts";
 
+const browserAuthentication = makeAuthenticationCache();
+
 const browserRouteEnvironment: RouteEnvironment = {
-  api: (capabilityToken) => makeApiClient(capabilityToken),
+  api: (capabilityToken) => makeApiClient(capabilityToken, undefined, browserAuthentication),
   preloadDocumentScreen,
 };
 
