@@ -16,6 +16,10 @@ export function installClientRouter(
   isApplicationUrl: (url: URL) => boolean,
   onNavigate: () => void,
 ): ClientRouter {
+  // The route the application last rendered. Fragment-only history moves fire `popstate` too, but
+  // they only scroll within the current route and must not reload it.
+  let routeLocation = routeLocationOf(location);
+
   const navigate = (destination: string | URL, options: NavigateOptions = {}): void => {
     const url = destination instanceof URL ? destination : new URL(destination, location.href);
     if (!isApplicationUrl(url)) {
@@ -29,6 +33,7 @@ export function installClientRouter(
     } else if (url.href !== location.href) {
       history.pushState(null, "", next);
     }
+    routeLocation = routeLocationOf(location);
     onNavigate();
   };
 
@@ -62,13 +67,21 @@ export function installClientRouter(
       url.search === location.search &&
       url.hash !== location.hash
     ) {
+      // The browser scrolls to the fragment itself. The route may have changed the search through
+      // `history.replaceState`, so remember it as the one the fragment belongs to.
+      routeLocation = routeLocationOf(location);
       return;
     }
 
     event.preventDefault();
     navigate(url);
   };
-  const handlePopState = (): void => onNavigate();
+  const handlePopState = (): void => {
+    const next = routeLocationOf(location);
+    if (next === routeLocation) return;
+    routeLocation = next;
+    onNavigate();
+  };
 
   document.addEventListener("click", handleClick);
   window.addEventListener("popstate", handlePopState);
@@ -81,4 +94,8 @@ export function installClientRouter(
     navigate,
     refresh: onNavigate,
   };
+}
+
+function routeLocationOf({ pathname, search }: Location): string {
+  return `${pathname}${search}`;
 }

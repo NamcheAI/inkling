@@ -636,6 +636,27 @@ test(
       );
       assert.equal(await architectureTocLink.getAttribute("aria-current"), null);
       assert.equal(await deliveryTocLink.getAttribute("aria-current"), "location");
+      // Jumping between sections only moves the fragment; it must not reload the route.
+      const fragmentRequests: string[] = [];
+      const recordFragmentRequest = (request: { url: () => string }): void => {
+        if (new URL(request.url()).pathname.startsWith("/api/")) {
+          fragmentRequests.push(request.url());
+        }
+      };
+      first.on("request", recordFragmentRequest);
+      await deliveryTocLink.click();
+      await first.waitForURL(/#delivery$/u);
+      await architectureTocLink.click();
+      await first.waitForURL(/#architecture$/u);
+      await first.waitForFunction(
+        () =>
+          document.querySelector('a[href="#architecture"]')?.getAttribute("aria-current") ===
+          "location",
+      );
+      await first.goBack();
+      await first.waitForURL(/#delivery$/u);
+      first.off("request", recordFragmentRequest);
+      assert.deepEqual(fragmentRequests, []);
       await first.evaluate(() => window.scrollTo(0, 0));
       assert.equal(await first.locator("[data-api-status]").count(), 0);
       assert.equal(await first.locator(".cm-editor").count(), 0);
