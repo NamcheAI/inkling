@@ -10,7 +10,7 @@
     "build": "wrangler deploy --dry-run --outdir dist",
     "build:package": "rm -rf dist && tsc -p tsconfig.build.json && node ../../scripts/fix-declaration-imports.mjs dist",
     "deploy": "wrangler deploy",
-    "dev": "wrangler dev ${INKLING_THEME:+--var \"INKLING_THEME:$INKLING_THEME\"}",
+    "dev": "pnpm --filter @earendil-works/inkling-frontend run build && wrangler dev ${INKLING_THEME:+--var \"INKLING_THEME:$INKLING_THEME\"}",
     "prepublishOnly": "echo 'Publish from the repository root with pnpm release' >&2 && exit 1",
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json"
@@ -19,6 +19,7 @@
     "@earendil-works/inkling-backend": "workspace:*",
     "@earendil-works/inkling-collaboration": "workspace:*",
     "@earendil-works/inkling-core": "workspace:*",
+    "@earendil-works/inkling-frontend": "workspace:*",
     "@earendil-works/inkling-protocol": "workspace:*",
     "@earendil-works/inkling-renderer": "workspace:*",
     "effect": "3.22.1",

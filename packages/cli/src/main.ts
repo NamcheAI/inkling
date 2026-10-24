@@ -121,6 +121,17 @@ export function main(arguments_: readonly string[]): Effect.Effect<void, unknown
         console.log(`Rebuilt the catalog from ${result.checkedObjects} checkpoints.`);
         return;
       }
+      case "reindex": {
+        const result = yield* client.rebuildSearchIndex;
+        if (result.errors.length > 0) {
+          for (const error of result.errors) console.error(error);
+          return yield* usageFailure(
+            `Search reindexing failed for ${result.errors.length} document(s).`,
+          );
+        }
+        console.log(`Reindexed ${result.indexedDocuments} documents.`);
+        return;
+      }
       case "verify": {
         const result = yield* client.verifyWorkspace;
         if (result.errors.length > 0) {
@@ -539,7 +550,7 @@ function commandInstance(
         Effect.mapError(
           () =>
             new Error(
-              `No Inkling workspace is configured for ${url.origin}. Read ${url.origin}/AGENTS.md and ask the user to connect it.`,
+              `No Inkling workspace is configured for ${url.origin}. Run \`inkling workspace add ${url.origin} API_KEY\`.`,
             ),
         ),
         Effect.flatMap((instance) => {

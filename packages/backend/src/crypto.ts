@@ -7,6 +7,7 @@ import {
   SecureToken,
   StorageError,
   taggedId,
+  TokenHasher,
   uuidV7Bytes,
 } from "@earendil-works/inkling-core";
 import type {
@@ -14,6 +15,7 @@ import type {
   IdGeneratorService,
   SecretHasherService,
   SecureTokenService,
+  TokenHasherService,
 } from "@earendil-works/inkling-core";
 import { decodeBase64, encodeBase64 } from "@earendil-works/inkling-collaboration";
 
@@ -52,6 +54,42 @@ export const SecretHasherLive = Layer.succeed(
  * setting verifies the other's hashes where the platform can compute them. */
 export function secretHasherLayer(iterations: number): Layer.Layer<SecretHasherService> {
   return Layer.succeed(SecretHasher, makeSecretHasher(iterations));
+}
+
+const tokenHashPrefix = "sha256$";
+
+/** Verifies token hashes from before `TokenHasherLive`; their iteration count is recorded. */
+const legacyTokenHasher = makeSecretHasher(100_000);
+
+/**
+ * Hashes generated tokens with one SHA-256 digest. Tokens hashed with PBKDF2
+ * before this scheme still verify and are reported as outdated, so callers
+ * replace their hashes on first use.
+ */
+export const TokenHasherLive = Layer.succeed(TokenHasher, {
+  hash: (token) => tokenDigest(token).pipe(Effect.map((digest) => `${tokenHashPrefix}${digest}`)),
+  isOutdated: (encodedHash) => !encodedHash.startsWith(tokenHashPrefix),
+  verify: (token, encodedHash) =>
+    encodedHash.startsWith(tokenHashPrefix)
+      ? Effect.gen(function* () {
+          const expected = yield* decodeBase64(encodedHash.slice(tokenHashPrefix.length)).pipe(
+            Effect.mapError((cause) => cryptoFailure("decode a token hash", cause)),
+          );
+          const actual = yield* tokenDigestBytes(token);
+          return constantTimeEqual(actual, expected);
+        })
+      : legacyTokenHasher.verify(token, encodedHash),
+} satisfies TokenHasherService);
+
+function tokenDigestBytes(token: string): Effect.Effect<Uint8Array, StorageError> {
+  return Effect.tryPromise({
+    catch: (cause) => cryptoFailure("hash a token", cause),
+    try: () => crypto.subtle.digest("SHA-256", textEncoder.encode(token)),
+  }).pipe(Effect.map((digest) => new Uint8Array(digest)));
+}
+
+function tokenDigest(token: string): Effect.Effect<string, StorageError> {
+  return tokenDigestBytes(token).pipe(Effect.map(encodeBase64));
 }
 
 function makeSecretHasher(pbkdf2Iterations: number): SecretHasherService {

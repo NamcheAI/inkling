@@ -3,6 +3,8 @@
   "name": "inkling",
   "main": "src/index.ts",
   "compatibility_date": "2026-03-27",
+  // A smaller script starts faster, and every isolate start parses it.
+  "minify": true,
   "durable_objects": {
     "bindings": [
       {

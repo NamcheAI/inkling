@@ -83,7 +83,7 @@ class Unauthorized extends Data.TaggedError("Unauthorized")<{
 export function mcpInstructions(origin: string): string {
   return `Inkling workspace at ${origin}: collaborative Markdown notes and numbered RFCs.
 
-Documents are named by ID (doc_...), RFC number (57 or RFC 0057), or a complete URL on this workspace; every tool's document argument accepts any of them. Start with search_documents or read_document.
+Documents are named by ID (doc_...), RFC number (57 or RFC 0057), or a complete URL on this workspace; every tool's document argument accepts any of them. Start with search_passages to find where a topic is discussed, search_documents to list or filter documents, or read_document.
 
 Working rules:
 - Read a document before changing it. Prefer edit_document, which replaces exact unique text and applies live to collaborators in the editor. Use replace_document_body only when the user wants a full rewrite.

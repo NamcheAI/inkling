@@ -3,6 +3,8 @@
   "name": "inkling",
   "main": "src/worker.ts",
   "compatibility_date": "2026-03-27",
+  // A smaller script starts faster, and every isolate start parses it.
+  "minify": true,
   "durable_objects": {
     "bindings": [
       {
@@ -36,19 +38,8 @@
     "binding": "ASSETS",
     "directory": "node_modules/@earendil-works/inkling-frontend/dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": [
-      "/AGENTS.md",
-      "/api/*",
-      "/mcp",
-      "/oauth/*",
-      "/.well-known/*",
-      "/rfc/*",
-      "/rfcs/*",
-      "/public/*",
-      "/state/*",
-      "/keyword/*",
-      "/theme.css",
-      "/theme.json",
-    ],
+    // The Worker routes every request and serves the frontend itself when no route matches, so
+    // redirects for legacy RFC URLs and protected links are never shadowed by the SPA fallback.
+    "run_worker_first": ["/*"],
   },
 }

@@ -25,10 +25,12 @@ import {
   DurableDocumentJournal,
   emptyAuthenticationState,
   emptyWorkspaceCatalog,
+  filterCatalog,
   IdGenerator,
   identifierTag,
   isDocumentActionAllowed,
   ObjectStore,
+  parseCatalogSearchQuery,
   personId,
   publicCatalog,
   purgeDocument,
@@ -38,9 +40,11 @@ import {
   resolveAuthorsByEmail,
   revokeApiKey,
   searchCatalog,
+  SearchIndex,
   isDocumentTrashExpired,
   SecretHasher,
   SecureToken,
+  TokenHasher,
   StorageError,
   takeAuthorizationCode,
   tombstoneDocument,
@@ -58,6 +62,7 @@ import type {
   CapabilityAccess,
   CatalogSummary,
   CommentActor,
+  DocumentId,
   DocumentMetadata,
   DocumentRevision,
   MetadataPatch,
@@ -100,7 +105,10 @@ import type {
   DocumentResponse,
   ImportDocumentRequest,
   MetadataPatchRequest,
+  PassageSearchResponse,
   PublicDocumentResponse,
+  SearchPassageDto,
+  SearchRebuildResponse,
   ServerCollaborationMessage,
   ShareLinkCreateRequest,
   ShareLinkDto,
@@ -114,6 +122,11 @@ import {
 } from "@earendil-works/inkling-renderer";
 
 const textEncoder = new TextEncoder();
+const maximumCachedPublishedRevisions = 128;
+/** How long the catalog may settle before its object storage projections are written. */
+const catalogProjectionDelayMilliseconds = 2_000;
+/** Collaboration updates refresh a document's catalog entry and search at most this often. */
+const documentProjectionIntervalMilliseconds = 2_000;
 const textDecoder = new TextDecoder();
 
 interface CapabilityRecord {
@@ -198,6 +211,8 @@ const persistedStateSchema = Schema.Struct({
 export interface LocalApplicationOptions {
   readonly workspaceId?: string | undefined;
   readonly ownsDocumentPrivateState?: boolean | undefined;
+  /** Whether this runtime writes the workspace catalog projections; document authorities do not. */
+  readonly ownsCatalogProjections?: boolean | undefined;
   readonly principalResolver?:
     | ((
         credentials: RequestCredentials,
@@ -219,9 +234,11 @@ export function makeLocalInklingApplication(
   | typeof DurableDocumentJournal.Service
   | typeof Digest.Service
   | typeof SecretHasher.Service
+  | typeof TokenHasher.Service
   | typeof SecureToken.Service
   | typeof IdGenerator.Service
   | typeof MarkdownRenderer.Service
+  | typeof SearchIndex.Service
 > {
   return Effect.gen(function* () {
     const stateStore = yield* WorkspaceStateStore;
@@ -229,16 +246,34 @@ export function makeLocalInklingApplication(
     const journal = yield* DurableDocumentJournal;
     const digest = yield* Digest;
     const hasher = yield* SecretHasher;
+    const tokenHasher = yield* TokenHasher;
     const tokens = yield* SecureToken;
     const ids = yield* IdGenerator;
     const renderer = yield* MarkdownRenderer;
+    const searchIndex = yield* SearchIndex;
     const stateMutex = yield* Effect.makeSemaphore(1);
     const roomMutex = yield* Effect.makeSemaphore(1);
     const rooms = new Map<string, DocumentAuthorityService>();
     const checkpointFibers = new Map<string, Fiber.RuntimeFiber<void, never>>();
     const dirtySince = new Map<string, number>();
     let state = yield* loadWorkspaceState(stateStore, options.workspaceId ?? "local");
-    state = yield* hydratePrivateDocumentState(state, objectStore);
+    // A runtime that owns private document state reads all of it when it
+    // starts. The workspace authority only mirrors what document authorities
+    // own, so it reads a document's state the first time it needs it, and a
+    // cold start waits for no object reads.
+    const hydratedPrivateState = new Set<string>();
+    if (options.ownsDocumentPrivateState !== false) {
+      state = mergePrivateDocumentStates(
+        state,
+        yield* loadPrivateDocumentStates(
+          state.workspaceId,
+          state.catalog.entries
+            .filter((entry) => entry.status === "active")
+            .map((entry) => entry.documentId),
+          objectStore,
+        ),
+      );
+    }
     const systemId = yield* personId("system@internal").pipe(Effect.mapError(toStorageError));
     const systemPrincipal: Principal = {
       kind: "workspace",
@@ -246,13 +281,71 @@ export function makeLocalInklingApplication(
       role: "administrator",
     };
 
+    // The catalog files in object storage are projections kept for backups.
+    // They are written once the catalog settles rather than on every save,
+    // and only by the runtime that owns the workspace catalog.
+    const catalogProjectionMutex = yield* Effect.makeSemaphore(1);
+    let persistedCatalog: WorkspaceCatalogState | undefined;
+    let catalogProjectionFiber: Fiber.RuntimeFiber<void, never> | undefined;
+
+    const flushCatalogProjections: Effect.Effect<void> = catalogProjectionMutex.withPermits(1)(
+      Effect.suspend(() => {
+        const current = state;
+        if (options.ownsCatalogProjections === false || current.catalog === persistedCatalog) {
+          return Effect.void;
+        }
+        return persistCatalogProjections(current, objectStore, digest).pipe(
+          Effect.tap(() => Effect.sync(() => (persistedCatalog = current.catalog))),
+          Effect.catchAll((error) =>
+            Effect.logWarning("Catalog projection write failed", error.message),
+          ),
+        );
+      }),
+    );
+
+    const scheduleCatalogProjections: Effect.Effect<void> = Effect.suspend(() => {
+      if (options.ownsCatalogProjections === false || catalogProjectionFiber !== undefined) {
+        return Effect.void;
+      }
+      return Effect.sleep(catalogProjectionDelayMilliseconds).pipe(
+        // Saves from here on schedule another write, so the last one is never missed.
+        Effect.ensuring(Effect.sync(() => (catalogProjectionFiber = undefined))),
+        Effect.zipRight(flushCatalogProjections),
+        Effect.forkDaemon,
+        Effect.flatMap((fiber) => Effect.sync(() => (catalogProjectionFiber = fiber))),
+      );
+    });
+
     const saveState = (next: LocalWorkspaceState): Effect.Effect<void, StorageError> =>
       stateStore.save(next).pipe(
-        Effect.tap(() => persistCatalogProjections(next, objectStore, digest).pipe(Effect.ignore)),
         Effect.tap(() => Effect.sync(() => (state = next))),
+        Effect.tap(() =>
+          next.catalog === persistedCatalog ? Effect.void : scheduleCatalogProjections,
+        ),
       );
 
     const withState = stateMutex.withPermits(1);
+
+    /** Mirrors the private state of documents not read yet; see `hydratedPrivateState`. */
+    const ensurePrivateDocumentState = (
+      documentIds: readonly string[],
+    ): Effect.Effect<void, ApplicationError> =>
+      Effect.suspend(() => {
+        if (options.ownsDocumentPrivateState !== false) return Effect.void;
+        const pending = [...new Set(documentIds)].filter((id) => !hydratedPrivateState.has(id));
+        if (pending.length === 0) return Effect.void;
+        return loadPrivateDocumentStates(state.workspaceId, pending, objectStore).pipe(
+          Effect.flatMap((stored) =>
+            withState(
+              Effect.sync(() => {
+                state = mergePrivateDocumentStates(state, stored);
+                for (const id of pending) hydratedPrivateState.add(id);
+              }),
+            ),
+          ),
+          Effect.mapError(toApplicationError),
+        );
+      });
 
     const provideAuthorityDependencies = <A, E>(
       effect: Effect.Effect<
@@ -266,6 +359,37 @@ export function makeLocalInklingApplication(
         Effect.provideService(DurableDocumentJournal, journal),
         Effect.provideService(Digest, digest),
       );
+
+    // Published revisions never change, so each is read from storage once.
+    // Reads of public documents and catalogs otherwise fetch every revision
+    // from object storage on every request.
+    const publishedRevisions = new Map<string, DocumentSnapshot>();
+    const loadPublishedRevision = (
+      id: DocumentId,
+      revision: DocumentRevision,
+    ): Effect.Effect<DocumentSnapshot, ApplicationError> => {
+      const key = `${state.workspaceId}:${id}:${revision}`;
+      const cached = publishedRevisions.get(key);
+      if (cached !== undefined) {
+        publishedRevisions.delete(key);
+        publishedRevisions.set(key, cached);
+        return Effect.succeed(cached);
+      }
+      return provideAuthorityDependencies(
+        loadDocumentRevision({ documentId: id, workspaceId: state.workspaceId }, revision),
+      ).pipe(
+        Effect.mapError(toApplicationError),
+        Effect.tap((snapshot) =>
+          Effect.sync(() => {
+            publishedRevisions.set(key, snapshot);
+            for (const oldest of publishedRevisions.keys()) {
+              if (publishedRevisions.size <= maximumCachedPublishedRevisions) break;
+              publishedRevisions.delete(oldest);
+            }
+          }),
+        ),
+      );
+    };
 
     const getRoom = (
       rawDocumentId: string,
@@ -327,50 +451,108 @@ export function makeLocalInklingApplication(
         checkpointFibers.set(room.documentId, fiber);
       });
 
+    /**
+     * Stores a credential record that authentication refreshed. The record is
+     * merged into the current state so concurrent changes, such as a
+     * revocation or logout, are kept. Failing to record use or to upgrade a
+     * hash never fails the request; the next request tries again.
+     */
+    const storeAuthenticatedRecord = (
+      update:
+        | { readonly apiKey: ApiKeyRecord; readonly session?: undefined }
+        | { readonly apiKey?: undefined; readonly session: SessionRecord },
+    ): Effect.Effect<void> =>
+      withState(
+        Effect.suspend(() => {
+          const { apiKeys, sessions } = state.authentication;
+          let authentication: AuthenticationState | undefined;
+          if (update.apiKey === undefined) {
+            const index = sessions.findIndex((record) => record.id === update.session.id);
+            const current = sessions[index];
+            authentication =
+              current === undefined
+                ? undefined
+                : {
+                    ...state.authentication,
+                    sessions: sessions.with(index, {
+                      ...current,
+                      tokenHash: update.session.tokenHash,
+                    }),
+                  };
+          } else {
+            const index = apiKeys.findIndex((record) => record.id === update.apiKey.id);
+            const current = apiKeys[index];
+            authentication =
+              current === undefined
+                ? undefined
+                : {
+                    ...state.authentication,
+                    apiKeys: apiKeys.with(index, {
+                      ...current,
+                      lastUsedAt: update.apiKey.lastUsedAt,
+                      tokenHash: update.apiKey.tokenHash,
+                    }),
+                  };
+          }
+          return authentication === undefined
+            ? Effect.void
+            : saveState({ ...state, authentication });
+        }),
+      ).pipe(
+        Effect.catchAll((error) =>
+          Effect.logWarning("Authenticated credential update failed", error.message),
+        ),
+      );
+
+    // Authentication only reads the state, so it never waits for the state
+    // lock; only the occasional record refresh takes it.
     const resolveStoredPrincipal = (
       credentials: RequestCredentials,
       targetDocumentId?: string,
     ): Effect.Effect<Principal, ApplicationError> =>
-      withState(
-        Effect.gen(function* () {
-          const now = new Date().toISOString();
-          if (credentials.bearerToken !== undefined) {
-            const authenticated = yield* authenticateApiKey(
-              state.authentication,
-              credentials.bearerToken,
-              now,
-            ).pipe(
-              Effect.provideService(SecretHasher, hasher),
-              Effect.mapError(toApplicationError),
-            );
-            yield* saveState({ ...state, authentication: authenticated.state }).pipe(
-              Effect.mapError(toApplicationError),
-            );
-            return authenticated.principal;
+      Effect.gen(function* () {
+        const now = new Date().toISOString();
+        if (credentials.bearerToken !== undefined) {
+          const authenticated = yield* authenticateApiKey(
+            state.authentication,
+            credentials.bearerToken,
+            now,
+          ).pipe(
+            Effect.provideService(TokenHasher, tokenHasher),
+            Effect.mapError(toApplicationError),
+          );
+          if (authenticated.updatedRecord !== undefined) {
+            yield* storeAuthenticatedRecord({ apiKey: authenticated.updatedRecord });
           }
-          if (credentials.sessionToken !== undefined) {
-            return yield* authenticateSession(
-              state.authentication,
-              credentials.sessionToken,
-              now,
-            ).pipe(
-              Effect.provideService(SecretHasher, hasher),
-              Effect.mapError(toApplicationError),
-            );
+          return authenticated.principal;
+        }
+        if (credentials.sessionToken !== undefined) {
+          const authenticated = yield* authenticateSession(
+            state.authentication,
+            credentials.sessionToken,
+            now,
+          ).pipe(
+            Effect.provideService(TokenHasher, tokenHasher),
+            Effect.mapError(toApplicationError),
+          );
+          if (authenticated.updatedRecord !== undefined) {
+            yield* storeAuthenticatedRecord({ session: authenticated.updatedRecord });
           }
-          if (credentials.capabilityToken !== undefined && targetDocumentId !== undefined) {
-            return yield* resolveCapability(
-              state,
-              credentials.capabilityToken,
-              targetDocumentId,
-              credentials.guestName,
-              credentials.capabilityProof,
-              hasher,
-            );
-          }
-          return { kind: "anonymous" } as const;
-        }),
-      );
+          return authenticated.principal;
+        }
+        if (credentials.capabilityToken !== undefined && targetDocumentId !== undefined) {
+          yield* ensurePrivateDocumentState([targetDocumentId]);
+          return yield* resolveCapability(
+            state,
+            credentials.capabilityToken,
+            targetDocumentId,
+            credentials.guestName,
+            credentials.capabilityProof,
+            tokenHasher,
+          );
+        }
+        return { kind: "anonymous" } as const;
+      });
 
     const resolvePrincipal = (
       credentials: RequestCredentials,
@@ -443,12 +625,7 @@ export function makeLocalInklingApplication(
             comments: { revision: 0, threads: [] },
           };
         }
-        const published = yield* provideAuthorityDependencies(
-          loadDocumentRevision(
-            { documentId: current.metadata.id, workspaceId: state.workspaceId },
-            publishedRevision,
-          ),
-        ).pipe(Effect.mapError(toApplicationError));
+        const published = yield* loadPublishedRevision(current.metadata.id, publishedRevision);
         const metadata = yield* metadataWithResolvedAuthors(published.metadata);
         const anonymousBody =
           principal.kind === "anonymous"
@@ -478,53 +655,154 @@ export function makeLocalInklingApplication(
         );
       });
 
+    const indexDocumentVariants = (
+      document: DocumentResponse,
+    ): Effect.Effect<void, ApplicationError> =>
+      Effect.gen(function* () {
+        if (!searchIndex.enabled) return;
+        const id = document.metadata.id as DocumentId;
+        const entry = state.catalog.entries.find((candidate) => candidate.documentId === id);
+        if (entry?.status !== "active" || document.metadata.deletedAt !== undefined) {
+          yield* searchIndex.removeDocument(id);
+          return;
+        }
+        yield* searchIndex.indexDocument({
+          body: document.body,
+          documentId: id,
+          revision: document.metadata.headRevision as DocumentRevision,
+          title: document.metadata.title,
+          variant: "working",
+        });
+        const publishedRevision = document.metadata.publishedRevision as
+          | DocumentRevision
+          | undefined;
+        if (publishedRevision === undefined) {
+          yield* searchIndex.removeDocument(id, "published");
+          return;
+        }
+        if ((yield* searchIndex.indexedRevision(id, "published")) === publishedRevision) return;
+        const published = yield* loadPublishedRevision(id, publishedRevision);
+        yield* searchIndex.indexDocument({
+          body: redactProtectedLinkText(published.body),
+          documentId: id,
+          revision: publishedRevision,
+          title: published.metadata.title,
+          variant: "published",
+        });
+      }).pipe(Effect.mapError(toApplicationError));
+
+    /** The search index is a projection: its failures are logged, never surfaced to writers. */
+    const updateSearchIndex = (document: DocumentResponse): Effect.Effect<void> =>
+      indexDocumentVariants(document).pipe(
+        Effect.catchAll((error) =>
+          Effect.logError("Search index update failed", {
+            code: error.code,
+            documentId: document.metadata.id,
+            message: error.message,
+          }),
+        ),
+      );
+
     const projectDocument = (
       room: DocumentAuthorityService,
     ): Effect.Effect<void, ApplicationError> =>
-      room.snapshot(systemPrincipal, new Date().toISOString()).pipe(
-        Effect.mapError(toApplicationError),
-        Effect.flatMap(summaryFromSnapshot),
-        Effect.flatMap((summary) =>
-          withState(
-            applyCatalogSummary(state.catalog, summary).pipe(
-              Effect.mapError(toApplicationError),
-              Effect.flatMap((catalog) =>
-                saveState({ ...state, catalog }).pipe(Effect.mapError(toApplicationError)),
-              ),
+      Effect.gen(function* () {
+        const snapshot = yield* room
+          .snapshot(systemPrincipal, new Date().toISOString())
+          .pipe(Effect.mapError(toApplicationError));
+        const summary = yield* summaryFromSnapshot(snapshot);
+        yield* withState(
+          applyCatalogSummary(state.catalog, summary).pipe(
+            Effect.mapError(toApplicationError),
+            Effect.flatMap((catalog) =>
+              saveState({ ...state, catalog }).pipe(Effect.mapError(toApplicationError)),
             ),
           ),
-        ),
-      );
+        );
+        yield* updateSearchIndex(toDocumentResponse(snapshot));
+      });
 
     const projectDocumentStatus = (
       room: DocumentAuthorityService,
       status: "active" | "deleted",
     ): Effect.Effect<void, ApplicationError> =>
-      room.snapshot(systemPrincipal, new Date().toISOString()).pipe(
-        Effect.mapError(toApplicationError),
-        Effect.flatMap(summaryFromSnapshot),
-        Effect.flatMap((summary) =>
-          withState(
-            applyCatalogSummary(state.catalog, summary).pipe(
-              Effect.flatMap((catalog) =>
-                status === "active"
-                  ? activateDocument(catalog, room.documentId)
-                  : tombstoneDocument(catalog, room.documentId),
-              ),
-              Effect.mapError(toApplicationError),
-              Effect.flatMap((catalog) =>
-                saveState({ ...state, catalog }).pipe(Effect.mapError(toApplicationError)),
-              ),
+      Effect.gen(function* () {
+        const snapshot = yield* room
+          .snapshot(systemPrincipal, new Date().toISOString())
+          .pipe(Effect.mapError(toApplicationError));
+        const summary = yield* summaryFromSnapshot(snapshot);
+        yield* withState(
+          applyCatalogSummary(state.catalog, summary).pipe(
+            Effect.flatMap((catalog) =>
+              status === "active"
+                ? activateDocument(catalog, room.documentId)
+                : tombstoneDocument(catalog, room.documentId),
+            ),
+            Effect.mapError(toApplicationError),
+            Effect.flatMap((catalog) =>
+              saveState({ ...state, catalog }).pipe(Effect.mapError(toApplicationError)),
             ),
           ),
-        ),
-      );
+        );
+        yield* updateSearchIndex(toDocumentResponse(snapshot));
+      });
+
+    const projectionFibers = new Map<string, Fiber.RuntimeFiber<void, never>>();
+
+    /**
+     * Projects a document after collaboration updates. Keystrokes arrive far
+     * more often than anyone reads the catalog, so updates within one
+     * interval share a single projection taken when the interval ends.
+     */
+    const scheduleProjection = (room: DocumentAuthorityService): Effect.Effect<void> =>
+      Effect.suspend(() => {
+        if (projectionFibers.has(room.documentId)) return Effect.void;
+        return Effect.sleep(documentProjectionIntervalMilliseconds).pipe(
+          // Updates from here on schedule another projection, so the last
+          // update is always covered by a snapshot taken after it.
+          Effect.ensuring(Effect.sync(() => projectionFibers.delete(room.documentId))),
+          Effect.zipRight(projectDocument(room)),
+          Effect.catchAll((error) => Effect.logError("Document projection failed", error.message)),
+          Effect.forkDaemon,
+          Effect.flatMap((fiber) =>
+            Effect.sync(() => {
+              projectionFibers.set(room.documentId, fiber);
+            }),
+          ),
+        );
+      });
+
+    /**
+     * Brings throttled projections up to date before a catalog read in the
+     * same process, so readers here never see an entry older than its
+     * document. Document authorities in other processes stay on the throttle.
+     */
+    const flushPendingProjections: Effect.Effect<void> = Effect.suspend(() =>
+      Effect.forEach(
+        [...projectionFibers],
+        ([id, fiber]) =>
+          Effect.gen(function* () {
+            projectionFibers.delete(id);
+            yield* Fiber.interrupt(fiber);
+            const room = rooms.get(id);
+            if (room === undefined) return;
+            yield* projectDocument(room).pipe(
+              Effect.catchAll((error) =>
+                Effect.logError("Document projection failed", error.message),
+              ),
+            );
+          }),
+        { discard: true },
+      ),
+    );
 
     const releaseDocumentRoom = (rawDocumentId: string): Effect.Effect<void> =>
       Effect.gen(function* () {
         const room = rooms.get(rawDocumentId);
         const checkpointFiber = checkpointFibers.get(rawDocumentId);
         if (checkpointFiber !== undefined) yield* Fiber.interrupt(checkpointFiber);
+        const projectionFiber = projectionFibers.get(rawDocumentId);
+        if (projectionFiber !== undefined) yield* Fiber.interrupt(projectionFiber);
         if (room !== undefined) yield* room.close;
         checkpointFibers.delete(rawDocumentId);
         dirtySince.delete(rawDocumentId);
@@ -550,6 +828,7 @@ export function makeLocalInklingApplication(
             }),
           ),
         );
+        yield* searchIndex.removeDocument(id).pipe(searchFallback(undefined));
       });
 
     const purgeDocumentData = (rawDocumentId: string): Effect.Effect<void, ApplicationError> =>
@@ -622,6 +901,7 @@ export function makeLocalInklingApplication(
         if (entry === undefined) {
           return yield* applicationFailure("not_found", "The document does not exist.", 404);
         }
+        yield* ensurePrivateDocumentState([id]);
         return {
           capabilities: state.capabilities.filter(
             (capability) =>
@@ -688,12 +968,7 @@ export function makeLocalInklingApplication(
             404,
           );
         }
-        const published = yield* provideAuthorityDependencies(
-          loadDocumentRevision(
-            { documentId: current.metadata.id, workspaceId: state.workspaceId },
-            publishedRevision,
-          ),
-        ).pipe(Effect.mapError(toApplicationError));
+        const published = yield* loadPublishedRevision(current.metadata.id, publishedRevision);
         const rendered = yield* renderer
           .render(published.body, {
             protectedLinkHref: ({ index }) =>
@@ -719,14 +994,69 @@ export function makeLocalInklingApplication(
         };
       });
 
+    /** The document of a published public RFC, from the catalog alone. */
+    const publicRfcDocumentId = (rfcNumber: number): Effect.Effect<string, ApplicationError> => {
+      const entry = state.catalog.entries.find(
+        (item) =>
+          item.status === "active" &&
+          (item.rfcNumber === rfcNumber || item.summary?.rfcNumber === rfcNumber) &&
+          item.summary?.visibility === "public" &&
+          item.summary.publishedRevision !== undefined,
+      );
+      return entry === undefined
+        ? applicationFailure("not_found", "The published RFC does not exist.", 404)
+        : Effect.succeed(entry.documentId);
+    };
+
+    const rebuildSearch: Effect.Effect<SearchRebuildResponse, ApplicationError> = Effect.gen(
+      function* () {
+        yield* searchIndex.clear.pipe(Effect.mapError(toApplicationError));
+        const errors: string[] = [];
+        let indexedDocuments = 0;
+        for (const entry of state.catalog.entries) {
+          if (entry.status !== "active") continue;
+          // Open rooms hold the newest state. Otherwise recover read-only from durable
+          // storage so a rebuild never writes on behalf of a document authority.
+          const open = rooms.get(entry.documentId);
+          const indexed = yield* (
+            open === undefined
+              ? provideAuthorityDependencies(
+                  makeDocumentAuthority({
+                    documentId: entry.documentId,
+                    workspaceId: state.workspaceId,
+                  }),
+                ).pipe(
+                  Effect.flatMap((room) =>
+                    room
+                      .snapshot(systemPrincipal, new Date().toISOString())
+                      .pipe(Effect.ensuring(room.close)),
+                  ),
+                )
+              : open.snapshot(systemPrincipal, new Date().toISOString())
+          ).pipe(
+            Effect.mapError(toApplicationError),
+            Effect.flatMap((snapshot) => indexDocumentVariants(toDocumentResponse(snapshot))),
+            Effect.either,
+          );
+          if (Either.isLeft(indexed)) errors.push(`${entry.documentId}: ${indexed.left.message}`);
+          else indexedDocuments += 1;
+        }
+        return { errors, indexedDocuments };
+      },
+    );
+
     const service: InklingApplicationService = {
       authorizeRequest: resolvePrincipal,
       documentRuntimeConfiguration: runtimeConfiguration,
       allDocumentRuntimeConfigurations: () =>
-        Effect.forEach(
-          state.catalog.entries.filter((entry) => entry.status === "active"),
-          (entry) => runtimeConfiguration(entry.documentId),
-        ),
+        Effect.suspend(() => {
+          const active = state.catalog.entries.filter((entry) => entry.status === "active");
+          return ensurePrivateDocumentState(active.map((entry) => entry.documentId)).pipe(
+            Effect.zipRight(
+              Effect.forEach(active, (entry) => runtimeConfiguration(entry.documentId)),
+            ),
+          );
+        }),
       currentDocumentProjection: (rawDocumentId) =>
         getRoom(rawDocumentId).pipe(Effect.flatMap((room) => snapshotFor(room, systemPrincipal))),
       applyDocumentProjection: (document) =>
@@ -741,6 +1071,7 @@ export function makeLocalInklingApplication(
               ),
             ),
           ),
+          Effect.zipRight(updateSearchIndex(document)),
         ),
       resolvePeople,
       releaseDocumentRoom,
@@ -757,6 +1088,7 @@ export function makeLocalInklingApplication(
               ),
             ),
           ),
+          Effect.zipRight(updateSearchIndex(document)),
         ),
       markCatalogRestored: (document) =>
         summaryFromDocument(document).pipe(
@@ -771,6 +1103,7 @@ export function makeLocalInklingApplication(
               ),
             ),
           ),
+          Effect.zipRight(updateSearchIndex(document)),
         ),
       markCatalogPurged: removeDocumentState,
       purgeExpiredDocuments: (now) =>
@@ -801,6 +1134,11 @@ export function makeLocalInklingApplication(
         Effect.gen(function* () {
           const principal = yield* resolvePrincipal(credentials);
           yield* requireAdministrator(principal);
+          yield* ensurePrivateDocumentState(
+            state.catalog.entries
+              .filter((entry) => entry.status === "active")
+              .map((entry) => entry.documentId),
+          );
           yield* Effect.forEach(rooms.values(), (room) =>
             room.checkpoint(new Date().toISOString()).pipe(Effect.mapError(toApplicationError)),
           );
@@ -892,6 +1230,7 @@ export function makeLocalInklingApplication(
             people: state.catalog.people,
           };
           const errors: string[] = [];
+          const recoveredSnapshots: DocumentSnapshot[] = [];
           for (const rawDocumentId of documentIds) {
             if (retainedEntries.some((entry) => entry.documentId === rawDocumentId)) continue;
             const recovered = yield* provideAuthorityDependencies(
@@ -930,10 +1269,16 @@ export function makeLocalInklingApplication(
               Effect.mapError(toApplicationError),
             );
             rooms.set(room.documentId, room);
+            recoveredSnapshots.push(snapshot);
           }
           if (errors.length === 0) {
             yield* saveState({ ...state, catalog: rebuilt }).pipe(
               Effect.mapError(toApplicationError),
+            );
+            yield* Effect.forEach(
+              recoveredSnapshots,
+              (snapshot) => updateSearchIndex(toDocumentResponse(snapshot)),
+              { discard: true },
             );
           }
           return { checkedObjects: documentIds.length, errors };
@@ -1019,6 +1364,9 @@ export function makeLocalInklingApplication(
           );
           yield* Effect.forEach(rooms.values(), (room) => room.close);
           rooms.clear();
+          publishedRevisions.clear();
+          // The restored objects hold private document state to mirror again.
+          hydratedPrivateState.clear();
           const restored: LocalWorkspaceState = {
             ...decodedState,
             authentication: normalizeAuthenticationState(decodedState.authentication),
@@ -1031,6 +1379,16 @@ export function makeLocalInklingApplication(
             catalog: normalizeWorkspaceCatalog(decodedState.catalog as WorkspaceCatalogState),
           };
           yield* saveState(restored).pipe(Effect.mapError(toApplicationError));
+          yield* rebuildSearch.pipe(
+            Effect.tap(({ errors }) =>
+              errors.length === 0
+                ? Effect.void
+                : Effect.logWarning("Search index rebuild after restore was incomplete", errors),
+            ),
+            Effect.catchAll((error) =>
+              Effect.logError("Search index rebuild after restore failed", error.message),
+            ),
+          );
           return { checkedObjects: objects.length, errors: [] };
         }),
       verifyWorkspace: (credentials) =>
@@ -1191,7 +1549,7 @@ export function makeLocalInklingApplication(
       checkpointAll: () =>
         Effect.forEach(rooms.values(), (room) =>
           room.checkpoint(new Date().toISOString()).pipe(Effect.mapError(toApplicationError)),
-        ).pipe(Effect.asVoid),
+        ).pipe(Effect.zipRight(flushCatalogProjections)),
       connectCollaboration: (credentials, rawDocumentId, stateVector) =>
         Effect.gen(function* () {
           const room = yield* getRoom(rawDocumentId);
@@ -1244,7 +1602,7 @@ export function makeLocalInklingApplication(
                 .pipe(
                   Effect.mapError(toApplicationError),
                   Effect.tap(() => scheduleCheckpoint(room)),
-                  Effect.tap(() => projectDocument(room).pipe(Effect.ignore, Effect.forkDaemon)),
+                  Effect.tap(() => scheduleProjection(room)),
                   Effect.map((accepted): ServerCollaborationMessage => ({
                     clientUpdateId: accepted.clientUpdateId,
                     documentRevision: accepted.revision,
@@ -1294,7 +1652,7 @@ export function makeLocalInklingApplication(
           return yield* withState(
             createApiKey(state.authentication, account, label, new Date().toISOString()).pipe(
               Effect.provideService(IdGenerator, ids),
-              Effect.provideService(SecretHasher, hasher),
+              Effect.provideService(TokenHasher, tokenHasher),
               Effect.provideService(SecureToken, tokens),
               Effect.mapError(toApplicationError),
               Effect.flatMap((created) =>
@@ -1328,7 +1686,7 @@ export function makeLocalInklingApplication(
               new Date().toISOString(),
             ).pipe(
               Effect.provideService(IdGenerator, ids),
-              Effect.provideService(SecretHasher, hasher),
+              Effect.provideService(TokenHasher, tokenHasher),
               Effect.provideService(SecureToken, tokens),
               Effect.mapError(toApplicationError),
               Effect.flatMap((created) =>
@@ -1357,7 +1715,7 @@ export function makeLocalInklingApplication(
             }
             const record: AuthorizationCodeRecord = taken.record;
             const identity = yield* verifyAuthorizationCode(record, taken.secret, grant, now).pipe(
-              Effect.provideService(SecretHasher, hasher),
+              Effect.provideService(TokenHasher, tokenHasher),
               Effect.mapError(toApplicationError),
             );
             const created = yield* createApiKey(
@@ -1368,7 +1726,7 @@ export function makeLocalInklingApplication(
               { oauthClientName: record.clientName },
             ).pipe(
               Effect.provideService(IdGenerator, ids),
-              Effect.provideService(SecretHasher, hasher),
+              Effect.provideService(TokenHasher, tokenHasher),
               Effect.provideService(SecureToken, tokens),
               Effect.mapError(toApplicationError),
             );
@@ -1465,6 +1823,7 @@ export function makeLocalInklingApplication(
               ),
             ),
           );
+          yield* updateSearchIndex(toDocumentResponse(snapshot));
           return toDocumentResponse(snapshot);
         }),
       importDocument: (credentials, request: ImportDocumentRequest) =>
@@ -1634,6 +1993,7 @@ export function makeLocalInklingApplication(
               ),
             ),
           );
+          yield* updateSearchIndex(toDocumentResponse(snapshot));
           return toDocumentResponse(snapshot);
         }),
       createThread: (credentials, rawDocumentId, request) =>
@@ -1815,42 +2175,60 @@ export function makeLocalInklingApplication(
         }),
       listPublicDocuments: (query, lifecycleState, label) =>
         Effect.gen(function* () {
+          yield* flushPendingProjections;
           const normalizedQuery = normalizeSearchText(query);
-          const entries = publicCatalog(state.catalog);
-          const documents = yield* Effect.forEach(entries, (summary) => {
-            const publishedRevision = summary.publishedRevision;
-            if (publishedRevision === undefined) return Effect.succeed(undefined);
-            return provideAuthorityDependencies(
-              loadDocumentRevision(
-                { documentId: summary.documentId, workspaceId: state.workspaceId },
-                publishedRevision,
-              ),
-            ).pipe(
-              Effect.mapError(toApplicationError),
-              Effect.flatMap((snapshot) =>
-                metadataWithResolvedAuthors(snapshot.metadata).pipe(
-                  Effect.map((metadata) => {
-                    const publicBody = redactProtectedLinkText(snapshot.body);
-                    const searchText = normalizeSearchText(
-                      `${metadata.rfcNumber ?? ""} ${metadata.title} ${publicBody} ${metadata.labels.join(" ")}`,
-                    );
-                    return (normalizedQuery.length === 0 || searchText.includes(normalizedQuery)) &&
-                      (lifecycleState === undefined ||
-                        metadata.lifecycleState === lifecycleState) &&
-                      (label === undefined || metadata.labels.includes(label))
-                      ? {
-                          excerpt: excerpt(publicBody),
-                          metadata: {
-                            ...metadata,
-                            publishedRevision,
-                          } as DocumentMetadataDto,
-                        }
-                      : undefined;
-                  }),
+          const bodyMatches =
+            normalizedQuery.length === 0
+              ? new Set<DocumentId>()
+              : yield* searchIndex
+                  .matchDocuments({ match: "all", phrases: [normalizedQuery] }, "published")
+                  .pipe(searchFallback(new Set<DocumentId>()));
+          const metadataMatches = (metadata: {
+            readonly labels: readonly string[];
+            readonly rfcNumber?: number | undefined;
+            readonly title: string;
+          }): boolean =>
+            normalizeSearchText(
+              `${metadata.rfcNumber ?? ""} ${metadata.title} ${metadata.labels.join(" ")}`,
+            ).includes(normalizedQuery);
+          // Only candidates are loaded from storage; the published revision decides the match.
+          const entries = publicCatalog(state.catalog).filter(
+            (summary) =>
+              normalizedQuery.length === 0 ||
+              bodyMatches.has(summary.documentId) ||
+              metadataMatches(summary),
+          );
+          const documents = yield* Effect.forEach(
+            entries,
+            (summary) => {
+              const publishedRevision = summary.publishedRevision;
+              if (publishedRevision === undefined) return Effect.succeed(undefined);
+              return loadPublishedRevision(summary.documentId, publishedRevision).pipe(
+                Effect.flatMap((snapshot) =>
+                  metadataWithResolvedAuthors(snapshot.metadata).pipe(
+                    Effect.map((metadata) => {
+                      const publicBody = redactProtectedLinkText(snapshot.body);
+                      return (normalizedQuery.length === 0 ||
+                        bodyMatches.has(summary.documentId) ||
+                        metadataMatches(metadata)) &&
+                        (lifecycleState === undefined ||
+                          metadata.lifecycleState === lifecycleState) &&
+                        (label === undefined || metadata.labels.includes(label))
+                        ? {
+                            excerpt: excerpt(publicBody),
+                            metadata: {
+                              ...metadata,
+                              publishedRevision,
+                            } as DocumentMetadataDto,
+                          }
+                        : undefined;
+                    }),
+                  ),
                 ),
-              ),
-            );
-          });
+              );
+            },
+            { concurrency: 8 },
+          );
           return {
             documents: documents.filter(
               (document): document is Exclude<typeof document, undefined> => document !== undefined,
@@ -1859,16 +2237,51 @@ export function makeLocalInklingApplication(
         }),
       listDocuments: (credentials, query) =>
         Effect.gen(function* () {
+          yield* flushPendingProjections;
           const principal = yield* resolvePrincipal(credentials);
           yield* authorizeWorkspace(principal, "read-catalog").pipe(
             Effect.mapError(toApplicationError),
           );
+          const parsed = parseCatalogSearchQuery(query);
+          const freeTerms = [
+            ...new Set(
+              parsed.terms.flatMap((term) => (term.field === undefined ? [term.value] : [])),
+            ),
+          ];
+          const bodyMatches = new Map(
+            yield* Effect.forEach(freeTerms, (term) =>
+              searchIndex.matchDocuments({ match: "all", phrases: [term] }, "working").pipe(
+                searchFallback(new Set<DocumentId>()),
+                Effect.map((documentIds) => [term, documentIds] as const),
+              ),
+            ),
+          );
           const summaries = searchCatalog(state.catalog, query, {
+            bodyMatches,
             currentPersonId:
               principal.kind === "workspace" || principal.kind === "api-key"
                 ? principal.personId
                 : undefined,
           });
+          const positiveTerms = parsed.terms.flatMap((term) =>
+            term.field === undefined && !term.negated ? [term.value] : [],
+          );
+          const excerpts =
+            positiveTerms.length === 0
+              ? new Map<DocumentId, string>()
+              : yield* searchIndex
+                  .excerpts(
+                    { match: "any", phrases: positiveTerms },
+                    "working",
+                    summaries
+                      .filter((summary) =>
+                        positiveTerms.some((term) =>
+                          bodyMatches.get(term)?.has(summary.documentId),
+                        ),
+                      )
+                      .map((summary) => summary.documentId),
+                  )
+                  .pipe(searchFallback(new Map<DocumentId, string>()));
           const documents = yield* Effect.forEach(summaries, (summary) =>
             summary.metadata === undefined
               ? getRoom(summary.documentId).pipe(
@@ -1877,12 +2290,12 @@ export function makeLocalInklingApplication(
                   ),
                   Effect.mapError(toApplicationError),
                   Effect.map((snapshot) => ({
-                    excerpt: summary.excerpt,
+                    excerpt: excerpts.get(summary.documentId) ?? summary.excerpt,
                     metadata: snapshot.metadata as DocumentMetadataDto,
                   })),
                 )
               : Effect.succeed({
-                  excerpt: summary.excerpt,
+                  excerpt: excerpts.get(summary.documentId) ?? summary.excerpt,
                   metadata: {
                     ...summary.metadata,
                     labels: summary.workingLabels ?? summary.metadata.labels,
@@ -1896,8 +2309,103 @@ export function makeLocalInklingApplication(
             ),
           } satisfies CatalogResponse;
         }),
+      searchPassages: (credentials, query, limit) =>
+        Effect.gen(function* () {
+          yield* flushPendingProjections;
+          const principal = yield* resolvePrincipal(credentials);
+          yield* authorizeWorkspace(principal, "read-catalog").pipe(
+            Effect.mapError(toApplicationError),
+          );
+          const parsed = parseCatalogSearchQuery(query);
+          const positiveTerms = [
+            ...new Set(
+              parsed.terms.flatMap((term) =>
+                term.field === undefined && !term.negated ? [term.value] : [],
+              ),
+            ),
+          ];
+          if (positiveTerms.length === 0) {
+            return yield* applicationFailure(
+              "search_terms_required",
+              "Passage search needs at least one search term besides filters.",
+              400,
+            );
+          }
+          const negatedTerms = parsed.terms.flatMap((term) =>
+            term.field === undefined && term.negated ? [term.value] : [],
+          );
+          const excluded = new Set<DocumentId>();
+          for (const term of negatedTerms) {
+            const matches = yield* searchIndex
+              .matchDocuments({ match: "all", phrases: [term] }, "working")
+              .pipe(Effect.mapError(toApplicationError));
+            for (const matched of matches) excluded.add(matched);
+          }
+          const now = new Date().toISOString();
+          const currentPersonId =
+            principal.kind === "workspace" || principal.kind === "api-key"
+              ? principal.personId
+              : undefined;
+          // Authorization happens here, against structured metadata, before anything surfaces.
+          const readable = filterCatalog(state.catalog, parsed, { currentPersonId }).filter(
+            (summary) =>
+              summary.metadata !== undefined &&
+              isDocumentActionAllowed(principal, "read-working", summary.metadata, now) &&
+              !excluded.has(summary.documentId) &&
+              !negatedTerms.some((term) => normalizeSearchText(summary.title).includes(term)),
+          );
+          const readableById = new Map(readable.map((summary) => [summary.documentId, summary]));
+          const activeDocuments = state.catalog.entries.filter(
+            (entry) => entry.status === "active",
+          ).length;
+          const passages = yield* searchIndex
+            .searchPassages({
+              documentIds:
+                readable.length === activeDocuments
+                  ? undefined
+                  : readable.map((summary) => summary.documentId),
+              keyword: { match: "any", phrases: positiveTerms },
+              limit: Math.max(1, Math.min(limit ?? 10, 50)),
+              perDocumentLimit: 3,
+              semantic: positiveTerms.join(" "),
+              variant: "working",
+            })
+            .pipe(Effect.mapError(toApplicationError));
+          return {
+            passages: passages.flatMap((passage): readonly SearchPassageDto[] => {
+              const summary = readableById.get(passage.documentId);
+              if (summary === undefined) return [];
+              return [
+                {
+                  documentId: passage.documentId,
+                  endLine: passage.endLine,
+                  headingPath: passage.headingPath,
+                  matchedBy: passage.matchedBy,
+                  revision: passage.revision,
+                  ...(summary.rfcNumber === undefined ? {} : { rfcNumber: summary.rfcNumber }),
+                  score: passage.score,
+                  snippet: passage.snippet,
+                  startLine: passage.startLine,
+                  title: summary.title,
+                },
+              ];
+            }),
+            semantic: searchIndex.semantic,
+          } satisfies PassageSearchResponse;
+        }),
+      rebuildSearchIndex: (credentials) =>
+        resolvePrincipal(credentials).pipe(
+          Effect.flatMap(requireAdministrator),
+          Effect.zipRight(rebuildSearch),
+        ),
+      refreshSearchIndex: () =>
+        searchIndex.refresh(Date.now() - 10_000).pipe(
+          Effect.map((result) => result.pending),
+          Effect.mapError(toApplicationError),
+        ),
       listDeletedDocuments: (credentials) =>
         Effect.gen(function* () {
+          yield* flushPendingProjections;
           const principal = yield* resolvePrincipal(credentials);
           yield* requireAdministrator(principal);
           const summaries = searchCatalog(state.catalog, "", {
@@ -1927,7 +2435,7 @@ export function makeLocalInklingApplication(
         withState(
           createWorkspaceSession(state.authentication, identity, new Date().toISOString()).pipe(
             Effect.provideService(IdGenerator, ids),
-            Effect.provideService(SecretHasher, hasher),
+            Effect.provideService(TokenHasher, tokenHasher),
             Effect.provideService(SecureToken, tokens),
             Effect.mapError(toApplicationError),
             Effect.flatMap((created) => {
@@ -2094,19 +2602,11 @@ export function makeLocalInklingApplication(
       readPublicDocument: (rawDocumentId) =>
         readPublished(rawDocumentId, `/public/documents/${encodeURIComponent(rawDocumentId)}`),
       readPublicRfc: (rfcNumber) =>
-        Effect.gen(function* () {
-          const entry = state.catalog.entries.find(
-            (item) =>
-              item.status === "active" &&
-              (item.rfcNumber === rfcNumber || item.summary?.rfcNumber === rfcNumber) &&
-              item.summary?.visibility === "public" &&
-              item.summary.publishedRevision !== undefined,
-          );
-          if (entry === undefined) {
-            return yield* applicationFailure("not_found", "The published RFC does not exist.", 404);
-          }
-          return yield* readPublished(entry.documentId, canonicalRfcPath(rfcNumber));
-        }),
+        publicRfcDocumentId(rfcNumber).pipe(
+          Effect.flatMap((id) => readPublished(id, canonicalRfcPath(rfcNumber))),
+        ),
+      publicRfcRuntimeConfiguration: (rfcNumber) =>
+        publicRfcDocumentId(rfcNumber).pipe(Effect.flatMap(runtimeConfiguration)),
       resolveProtectedLink: (credentials, rawDocumentId, rawRevision, linkIndex) =>
         Effect.gen(function* () {
           const id = yield* documentId(rawDocumentId).pipe(Effect.mapError(toApplicationError));
@@ -2115,9 +2615,7 @@ export function makeLocalInklingApplication(
           const revision = yield* documentRevision(rawRevision).pipe(
             Effect.mapError(toApplicationError),
           );
-          const published = yield* provideAuthorityDependencies(
-            loadDocumentRevision({ documentId: id, workspaceId: state.workspaceId }, revision),
-          ).pipe(Effect.mapError(toApplicationError));
+          const published = yield* loadPublishedRevision(id, revision);
           const rendered = yield* renderer
             .render(published.body, { rewriteUrl: rewriteRfcUrl })
             .pipe(Effect.mapError(toApplicationError));
@@ -2313,7 +2811,9 @@ export function makeLocalInklingApplication(
 
           const id = yield* ids.generate(identifierTag.capability);
           const secret = yield* tokens.generate(32).pipe(Effect.mapError(toApplicationError));
-          const tokenHash = yield* hasher.hash(secret).pipe(Effect.mapError(toApplicationError));
+          const tokenHash = yield* tokenHasher
+            .hash(secret)
+            .pipe(Effect.mapError(toApplicationError));
           const passwordHash =
             request.password === undefined
               ? undefined
@@ -2424,7 +2924,12 @@ export function makeLocalInklingApplication(
                 401,
               );
             }
-            const capability = yield* findCapabilityRecord(state, token, rawDocumentId, hasher);
+            const capability = yield* findCapabilityRecord(
+              state,
+              token,
+              rawDocumentId,
+              tokenHasher,
+            );
             if (capability.passwordHash === undefined || capability.passwordProof === undefined) {
               return yield* applicationFailure(
                 "share_password_not_required",
@@ -2453,6 +2958,20 @@ export function makeLocalInklingApplication(
 
     return service;
   });
+}
+
+/** Search is a projection: when it is unavailable, listings degrade instead of failing. */
+function searchFallback<B>(fallback: B) {
+  return <A, E extends { readonly message: string }, R>(
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A | B, never, R> =>
+    effect.pipe(
+      Effect.catchAll((error) =>
+        Effect.logWarning("Search index unavailable", error.message).pipe(
+          Effect.as<A | B>(fallback),
+        ),
+      ),
+    );
 }
 
 export function localApplicationLayer(options: LocalApplicationOptions = {}) {
@@ -2495,70 +3014,82 @@ function persistCatalogProjections(
   });
 }
 
-function hydratePrivateDocumentState(
-  initial: LocalWorkspaceState,
+interface StoredPrivateDocumentState {
+  readonly documentId: string;
+  readonly decoded: typeof privateDocumentStateSchema.Type;
+}
+
+/** Reads the private state documents keep in object storage, concurrently. */
+function loadPrivateDocumentStates(
+  workspaceId: string,
+  documentIds: readonly string[],
   objectStore: typeof ObjectStore.Service,
-): Effect.Effect<LocalWorkspaceState, StorageError> {
-  return Effect.reduce(
-    initial.catalog.entries.filter((entry) => entry.status === "active"),
-    initial,
-    (current, entry) =>
-      objectStore.get(privateDocumentStateKey(current.workspaceId, entry.documentId)).pipe(
-        Effect.flatMap((stored) => {
-          if (stored === undefined) return Effect.succeed(current);
-          return Schema.decodeUnknown(Schema.parseJson(privateDocumentStateSchema))(
-            textDecoder.decode(stored.bytes),
-          ).pipe(
-            Effect.mapError(
-              (cause) =>
-                new StorageError({
-                  cause,
-                  message: `Private document state is corrupt for ${entry.documentId}.`,
-                  operation: "decode private document state",
-                  retryable: false,
-                }),
-            ),
-            Effect.map((decoded) => {
-              const localCapabilities = current.capabilities.filter(
-                (capability) => capability.documentId === entry.documentId,
-              );
-              const projectedCapabilities = decoded.capabilities as readonly CapabilityRecord[];
-              const localGeneration = Math.max(
-                -1,
-                ...localCapabilities.map((item) => item.generation),
-              );
-              const projectedGeneration = Math.max(
-                -1,
-                ...projectedCapabilities.map((item) => item.generation),
-              );
-              const capabilities =
-                projectedGeneration >= localGeneration
-                  ? [
-                      ...current.capabilities.filter(
-                        (capability) => capability.documentId !== entry.documentId,
-                      ),
-                      ...projectedCapabilities,
-                    ]
-                  : current.capabilities;
-              const projectedAttachments =
-                decoded.attachments as unknown as readonly AttachmentMetadataDto[];
-              const attachments = [
-                ...(current.attachments[entry.documentId] ?? []),
-                ...projectedAttachments,
-              ].filter(
-                (attachment, index, all) =>
-                  all.findIndex((candidate) => candidate.id === attachment.id) === index,
-              );
-              return {
-                ...current,
-                attachments: { ...current.attachments, [entry.documentId]: attachments },
-                capabilities,
-              };
-            }),
-          );
-        }),
+): Effect.Effect<readonly StoredPrivateDocumentState[], StorageError> {
+  return Effect.forEach(
+    documentIds,
+    (id) =>
+      objectStore.get(privateDocumentStateKey(workspaceId, id)).pipe(
+        Effect.flatMap((stored) =>
+          stored === undefined
+            ? Effect.succeed([])
+            : Schema.decodeUnknown(Schema.parseJson(privateDocumentStateSchema))(
+                textDecoder.decode(stored.bytes),
+              ).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new StorageError({
+                      cause,
+                      message: `Private document state is corrupt for ${id}.`,
+                      operation: "decode private document state",
+                      retryable: false,
+                    }),
+                ),
+                Effect.map((decoded) => [{ decoded, documentId: id }]),
+              ),
+        ),
       ),
-  );
+    { concurrency: 16 },
+  ).pipe(Effect.map((loaded) => loaded.flat()));
+}
+
+/** Merges stored private document state into the workspace state; newer sharing generations win. */
+function mergePrivateDocumentStates(
+  initial: LocalWorkspaceState,
+  stored: readonly StoredPrivateDocumentState[],
+): LocalWorkspaceState {
+  const replacedCapabilities = new Map<string, readonly CapabilityRecord[]>();
+  const attachments: Record<string, readonly AttachmentMetadataDto[]> = {
+    ...initial.attachments,
+  };
+  for (const { decoded, documentId: id } of stored) {
+    const projectedCapabilities = decoded.capabilities as readonly CapabilityRecord[];
+    const localGeneration = Math.max(
+      -1,
+      ...initial.capabilities
+        .filter((capability) => capability.documentId === id)
+        .map((capability) => capability.generation),
+    );
+    const projectedGeneration = Math.max(
+      -1,
+      ...projectedCapabilities.map((capability) => capability.generation),
+    );
+    if (projectedGeneration >= localGeneration) replacedCapabilities.set(id, projectedCapabilities);
+    const projectedAttachments = decoded.attachments as unknown as readonly AttachmentMetadataDto[];
+    attachments[id] = [...(initial.attachments[id] ?? []), ...projectedAttachments].filter(
+      (attachment, index, all) =>
+        all.findIndex((candidate) => candidate.id === attachment.id) === index,
+    );
+  }
+  return {
+    ...initial,
+    attachments,
+    capabilities: [
+      ...initial.capabilities.filter(
+        (capability) => !replacedCapabilities.has(capability.documentId),
+      ),
+      ...[...replacedCapabilities.values()].flat(),
+    ],
+  };
 }
 
 function persistPrivateDocumentState(
@@ -2668,10 +3199,10 @@ function resolveCapability(
   targetDocumentId: string,
   guestName: string | undefined,
   capabilityProof: string | undefined,
-  hasher: typeof SecretHasher.Service,
+  tokenHasher: typeof TokenHasher.Service,
 ): Effect.Effect<Principal, ApplicationError> {
   return Effect.gen(function* () {
-    const record = yield* findCapabilityRecord(state, token, targetDocumentId, hasher);
+    const record = yield* findCapabilityRecord(state, token, targetDocumentId, tokenHasher);
     if (
       record.passwordHash !== undefined &&
       (record.passwordProof === undefined || record.passwordProof !== capabilityProof)
@@ -2703,7 +3234,7 @@ function findCapabilityRecord(
   state: LocalWorkspaceState,
   token: string,
   targetDocumentId: string,
-  hasher: typeof SecretHasher.Service,
+  tokenHasher: typeof TokenHasher.Service,
 ): Effect.Effect<CapabilityRecord, ApplicationError> {
   return Effect.gen(function* () {
     const [prefix, documentValue, id, secret, extra] = token.split(".");
@@ -2721,7 +3252,9 @@ function findCapabilityRecord(
     );
     if (
       record === undefined ||
-      !(yield* hasher.verify(secret, record.tokenHash).pipe(Effect.mapError(toApplicationError)))
+      !(yield* tokenHasher
+        .verify(secret, record.tokenHash)
+        .pipe(Effect.mapError(toApplicationError)))
     ) {
       return yield* applicationFailure("invalid_capability", "The capability is invalid.", 401);
     }
@@ -2800,7 +3333,6 @@ function summaryFromSnapshot(snapshot: DocumentSnapshot): Effect.Effect<CatalogS
 }
 
 function summaryFromDocument(document: DocumentResponse): Effect.Effect<CatalogSummary> {
-  const body = normalizeSearchText(document.body);
   return parseDocumentSource(document.body).pipe(
     Effect.map((source) => source.frontmatter?.labels ?? document.metadata.labels),
     Effect.catchAll(() => Effect.succeed(document.metadata.labels)),
@@ -2811,7 +3343,6 @@ function summaryFromDocument(document: DocumentResponse): Effect.Effect<CatalogS
       excerpt: excerpt(document.body),
       labels: document.metadata.labels,
       metadata: document.metadata as DocumentMetadata,
-      normalizedBody: body,
       publishedRevision: document.metadata.publishedRevision as DocumentRevision | undefined,
       revision: document.metadata.headRevision as DocumentRevision,
       reviewers: document.metadata.reviewers as readonly PersonReference[],

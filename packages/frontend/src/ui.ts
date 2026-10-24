@@ -26,6 +26,11 @@ export function publicDocumentHref(documentId: string, rfcNumber: number | undef
     : `/rfc/${formatRfcNumber(rfcNumber)}`;
 }
 
+/** Signs in and then returns to `url`. */
+export function signInHref(url: URL): string {
+  return `/api/auth/google/start?next=${encodeURIComponent(`${url.pathname}${url.search}${url.hash}`)}`;
+}
+
 /** An RFC number as Inkling shows and routes it, zero-padded to four digits. */
 export function formatRfcNumber(rfcNumber: number): string {
   return String(rfcNumber).padStart(4, "0");

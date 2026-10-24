@@ -33,7 +33,11 @@
   position: relative;
   z-index: var(--semantic-number-layer-raised);
   box-shadow: inset 0 0 0 var(--semantic-dimension-border-width-medium)
-    var(--semantic-color-focus-ring);
+    var(--row-marker, var(--semantic-color-focus-ring));
+}
+
+.row[data-catalog-selected] {
+  --row-marker: var(--semantic-color-border-primary);
 }
 
 .row[data-document-visibility="public"] {

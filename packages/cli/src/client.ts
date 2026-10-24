@@ -10,6 +10,7 @@ import {
   DocumentMetadataSchema,
   DocumentResponseSchema,
   ProtocolErrorSchema,
+  SearchRebuildResponseSchema,
   ShareLinksResponseSchema,
 } from "@earendil-works/inkling-protocol";
 import type {
@@ -20,6 +21,7 @@ import type {
   DocumentMetadataDto,
   DocumentResponse,
   ImportDocumentRequest,
+  SearchRebuildResponse,
   ShareLinksResponse,
 } from "@earendil-works/inkling-protocol";
 
@@ -39,6 +41,7 @@ export interface CliClient {
   ) => Effect.Effect<BackupVerificationDto, ClientError>;
   readonly verifyWorkspace: Effect.Effect<BackupVerificationDto, ClientError>;
   readonly repairCatalog: Effect.Effect<BackupVerificationDto, ClientError>;
+  readonly rebuildSearchIndex: Effect.Effect<SearchRebuildResponse, ClientError>;
   readonly uploadAttachment: (
     documentId: string,
     filename: string,
@@ -282,6 +285,7 @@ export function makeCliClient(instance: Instance): CliClient {
       }),
     verifyWorkspace: request("/api/admin/verify", BackupVerificationSchema),
     repairCatalog: mutate("/api/admin/repair", BackupVerificationSchema, "POST"),
+    rebuildSearchIndex: mutate("/api/admin/search/rebuild", SearchRebuildResponseSchema, "POST"),
     downloadAttachment: (documentId, attachmentId) =>
       assertDocument(documentId).pipe(
         Effect.zipRight(

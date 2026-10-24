@@ -29,6 +29,7 @@ const expectedHelpTopics = [
   "metadata",
   "publish",
   "read",
+  "reindex",
   "reopen",
   "repair",
   "replace",

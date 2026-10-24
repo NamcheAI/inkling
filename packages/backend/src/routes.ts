@@ -31,3 +31,19 @@ export function rfcRedirectLocation(requestUrl: string): string | undefined {
     ? undefined
     : `${canonical}${url.search}`;
 }
+
+/**
+ * How long browsers may reuse a static frontend file without asking again.
+ * Vite fingerprints everything under /assets/, so those URLs never change
+ * content. The shell's stylesheets and fonts keep stable URLs, so they are
+ * reused briefly; they block rendering, and revalidating them costs a round
+ * trip on every page load.
+ */
+export function staticAssetCacheControl(pathname: string): string | undefined {
+  if (pathname.startsWith("/assets/")) return "public, max-age=31536000, immutable";
+  if (pathname.startsWith("/fonts/elanor/files/")) return "public, max-age=86400";
+  if (/^\/(?:fonts\/elanor\/)?[\w-]+\.css$/u.test(pathname)) {
+    return "public, max-age=300, stale-while-revalidate=86400";
+  }
+  return undefined;
+}

@@ -11,12 +11,15 @@ import { documentTrashExpiresAt } from "@earendil-works/inkling-core";
 import type { CatalogResponse, DocumentSummary } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService, ApiError } from "./api.ts";
-import { useAppContext } from "./app-context.tsx";
-import { documentFolio, documentHref, formatLocalDate } from "./ui.ts";
+import { useAppContext, useCurrentUrl } from "./app-context.tsx";
+import { documentFolio, documentHref, formatDate, formatLocalDate } from "./ui.ts";
 import { ButtonLink } from "./components/button-link.tsx";
 import { ConfirmationDialog } from "./components/confirmation-dialog.tsx";
 import { EmptyMessage } from "./components/empty-message.tsx";
 import { useEffectAction } from "./effect-hooks.ts";
+import { atCurrentRevision } from "./trash-actions.ts";
+import type { TrashMutation } from "./trash-actions.ts";
+import { useHydrated } from "./use-hydrated.ts";
 import styles from "./trash-screen.module.css";
 import workspaceStyles from "./workspace.module.css";
 
@@ -25,20 +28,21 @@ export interface TrashScreenProps {
   readonly initialCatalog: CatalogResponse;
 }
 
-interface TrashMutation {
-  readonly documentId: string;
-  readonly expectedRevision: number;
-}
-
 export function TrashScreen({ api, initialCatalog }: TrashScreenProps): React.JSX.Element {
   const { showToast } = useAppContext();
+  const { search } = useCurrentUrl();
+  const formatDeletionDate = useHydrated() ? formatLocalDate : formatDate;
   const [catalog, setCatalog] = useState(initialCatalog);
   const [permanentCandidate, setPermanentCandidate] = useState<DocumentSummary>();
-  const restoreDocument = useEffectAction<TrashMutation, unknown, ApiError>(
-    ({ documentId, expectedRevision }) => api.restoreDocument(documentId, expectedRevision),
+  const restoreDocument = useEffectAction<TrashMutation, unknown, ApiError>((mutation) =>
+    atCurrentRevision(api, mutation, (revision) =>
+      api.restoreDocument(mutation.documentId, revision),
+    ),
   );
-  const hardDeleteDocument = useEffectAction<TrashMutation, void, ApiError>(
-    ({ documentId, expectedRevision }) => api.hardDeleteDocument(documentId, expectedRevision),
+  const hardDeleteDocument = useEffectAction<TrashMutation, void, ApiError>((mutation) =>
+    atCurrentRevision(api, mutation, (revision) =>
+      api.hardDeleteDocument(mutation.documentId, revision),
+    ),
   );
 
   useEffect(() => setCatalog(initialCatalog), [initialCatalog]);
@@ -98,17 +102,25 @@ export function TrashScreen({ api, initialCatalog }: TrashScreenProps): React.JS
                         <span className={styles["folio"]}>{documentFolio(metadata.rfcNumber)}</span>
                         <div className={styles["summary"]}>
                           <h2>
-                            <a href={documentHref(metadata.id, metadata.rfcNumber, false, "edit")}>
+                            <a
+                              href={documentHref(
+                                metadata.id,
+                                metadata.rfcNumber,
+                                false,
+                                "edit",
+                                search,
+                              )}
+                            >
                               {metadata.title}
                             </a>
                           </h2>
                           <p>
                             {metadata.deletedAt === undefined
                               ? "Deletion date unavailable"
-                              : `Deleted ${formatLocalDate(metadata.deletedAt)}`}
+                              : `Deleted ${formatDeletionDate(metadata.deletedAt)}`}
                             {expiresAt === undefined
                               ? ""
-                              : ` · Permanently deletes ${formatLocalDate(expiresAt)}`}
+                              : ` · Permanently deletes ${formatDeletionDate(expiresAt)}`}
                           </p>
                         </div>
                       </div>
@@ -117,7 +129,13 @@ export function TrashScreen({ api, initialCatalog }: TrashScreenProps): React.JS
                           data-edit-trashed-document={metadata.id}
                           density="compact"
                           hierarchy="secondary"
-                          href={documentHref(metadata.id, metadata.rfcNumber, false, "edit")}
+                          href={documentHref(
+                            metadata.id,
+                            metadata.rfcNumber,
+                            false,
+                            "edit",
+                            search,
+                          )}
                           iconStart={<EditIcon />}
                         >
                           Edit

@@ -14,18 +14,28 @@ import {
   findBundledTheme,
   isDefaultThemeSelection,
   InklingApplication,
+  staticAssetCacheControl,
   ThemeError,
 } from "@earendil-works/inkling-backend";
 import type {
   GoogleAuthenticationEnvironment,
   InklingApplicationService,
+  OpenAiCompatibleEmbedderOptions,
   ThemeConfiguration,
 } from "@earendil-works/inkling-backend";
+import type * as FrontendServer from "@earendil-works/inkling-frontend/server";
 import { MarkdownRendererLive } from "@earendil-works/inkling-renderer";
 
 import { localApplicationLayer } from "./application.ts";
-import { DigestLive, IdGeneratorLive, SecretHasherLive, SecureTokenLive } from "./crypto.ts";
+import {
+  DigestLive,
+  IdGeneratorLive,
+  SecretHasherLive,
+  SecureTokenLive,
+  TokenHasherLive,
+} from "./crypto.ts";
 import { acquireDataDirectoryLock, DataDirectoryLockError } from "./lock.ts";
+import { embeddingsFromEnvironment, searchIndexLayer } from "./search.ts";
 import { journalLayer, objectStoreLayer, workspaceStateStoreLayer } from "./storage.ts";
 import { installWebSocketServer } from "./websocket.ts";
 
@@ -36,6 +46,8 @@ export interface StartServerOptions {
   readonly googleAuthentication?: GoogleAuthenticationEnvironment | undefined;
   readonly onListen?: ((port: number) => void) | undefined;
   readonly theme?: string | undefined;
+  /** Semantic search embeddings; defaults to the `INKLING_EMBEDDINGS_*` environment. */
+  readonly embeddings?: OpenAiCompatibleEmbedderOptions | undefined;
 }
 
 export interface RunningServer {
@@ -64,7 +76,8 @@ export function startServer(
   return Effect.gen(function* () {
     const theme = yield* loadTheme(options.theme);
     yield* acquireDataDirectoryLock(options.dataDirectory);
-    const runtime = createRuntime(options.dataDirectory);
+    const embeddings = options.embeddings ?? embeddingsFromEnvironment();
+    const runtime = createRuntime(options.dataDirectory, embeddings);
     yield* Effect.tryPromise({
       catch: (cause) =>
         new DataDirectoryLockError({
@@ -92,6 +105,26 @@ export function startServer(
       }
     }).pipe(Effect.forkScoped);
 
+    if (embeddings !== undefined) {
+      yield* Effect.gen(function* () {
+        while (true) {
+          const pending = yield* Effect.tryPromise({
+            catch: (error) => error,
+            try: () =>
+              runtime.runPromise(
+                Effect.flatMap(InklingApplication, (application) =>
+                  application.refreshSearchIndex(),
+                ),
+              ),
+          }).pipe(
+            Effect.tapError((error) => Effect.logError("Inkling search embedding failed", error)),
+            Effect.orElseSucceed(() => 0),
+          );
+          yield* Effect.sleep(pending > 0 ? "2 seconds" : "10 seconds");
+        }
+      }).pipe(Effect.forkScoped);
+    }
+
     const app = createBackendApp({
       googleAuthentication: options.googleAuthentication ?? googleAuthenticationFromEnvironment(),
       runtime,
@@ -104,11 +137,34 @@ export function startServer(
       ),
       "dist",
     );
+    const renderer = yield* loadApplicationRenderer(path.join(frontendRoot, "index.html"));
+    if (renderer !== undefined) {
+      // Application pages render on the server, loading their data through
+      // this application as the browser would.
+      app.on(["GET", "HEAD"], "*", async (context, next) => {
+        const page = renderer.render({
+          fetch: (request) => Promise.resolve(app.fetch(request)),
+          request: context.req.raw,
+          template: renderer.template,
+        });
+        if (page === undefined) return next();
+        return page;
+      });
+    }
     app.get("/trash", serveStatic({ path: "index.html", root: frontendRoot }));
     app.get("/documents/*", serveStatic({ path: "index.html", root: frontendRoot }));
     app.get("/rfc/*", serveStatic({ path: "index.html", root: frontendRoot }));
     app.get("/share/*", serveStatic({ path: "index.html", root: frontendRoot }));
-    app.use("/*", serveStatic({ root: frontendRoot }));
+    app.use(
+      "/*",
+      serveStatic({
+        onFound: (_path, context) => {
+          const cacheControl = staticAssetCacheControl(context.req.path);
+          if (cacheControl !== undefined) context.header("Cache-Control", cacheControl);
+        },
+        root: frontendRoot,
+      }),
+    );
 
     const server = yield* Effect.acquireRelease(
       Effect.sync(() =>
@@ -129,6 +185,31 @@ export function startServer(
     yield* Effect.addFinalizer(() => Effect.sync(removeWebSockets));
     return { runtime, server };
   }).pipe(Effect.provide(NodeFileSystem.layer));
+}
+
+interface ApplicationRenderer {
+  readonly render: typeof FrontendServer.renderApplication;
+  readonly template: string;
+}
+
+/**
+ * Loads the frontend's server renderer and the shell it renders into. Without
+ * a frontend build, application pages are served as the static shell.
+ */
+function loadApplicationRenderer(
+  templatePath: string,
+): Effect.Effect<ApplicationRenderer | undefined> {
+  return Effect.promise(async () => {
+    try {
+      const [{ renderApplication }, template] = await Promise.all([
+        import("@earendil-works/inkling-frontend/server"),
+        readFile(templatePath, "utf8"),
+      ]);
+      return { render: renderApplication, template };
+    } catch {
+      return undefined;
+    }
+  });
 }
 
 /** Loads `INKLING_THEME`; the default selection keeps Elanor's own theme and yields no overrides. */
@@ -169,20 +250,26 @@ export function googleAuthenticationFromEnvironment(
 
 function createRuntime(
   dataDirectory: string,
+  embeddings: OpenAiCompatibleEmbedderOptions | undefined,
 ): ManagedRuntime.ManagedRuntime<InklingApplicationService, never> {
   const base = Layer.mergeAll(
     NodeFileSystem.layer,
     DigestLive,
     SecureTokenLive,
     SecretHasherLive,
+    TokenHasherLive,
     MarkdownRendererLive,
   );
   const storage = Layer.mergeAll(
     objectStoreLayer(dataDirectory),
     journalLayer(dataDirectory),
     workspaceStateStoreLayer(dataDirectory),
+    searchIndexLayer(dataDirectory, { embeddings }),
   ).pipe(Layer.provide(base));
   const dependencies = Layer.mergeAll(base, storage, IdGeneratorLive);
   const application = localApplicationLayer().pipe(Layer.provide(dependencies), Layer.orDie);
   return ManagedRuntime.make(application);
 }
+
+export { embeddingsFromEnvironment, openSqliteSearchDatabase, searchIndexLayer } from "./search.ts";
+export type { NodeSearchOptions, SqliteSearchDatabase } from "./search.ts";

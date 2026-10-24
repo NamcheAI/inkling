@@ -1,6 +1,7 @@
 import { EditIcon } from "@earendil-works/elanor-icons-react";
 import type { DocumentMetadataDto } from "@earendil-works/inkling-protocol";
 
+import { useCurrentUrl } from "../app-context.tsx";
 import { documentHref } from "../ui.ts";
 import { ButtonLink } from "./button-link.tsx";
 import styles from "./reader.module.css";
@@ -16,6 +17,7 @@ export function ReaderToolbar({
   publicDocument = false,
   shared,
 }: ReaderToolbarProps): React.JSX.Element | null {
+  const { search } = useCurrentUrl();
   const canEdit = !publicDocument && (!shared || metadata.sharing.access === "edit");
   if (!canEdit) return null;
 
@@ -24,7 +26,7 @@ export function ReaderToolbar({
       <ButtonLink
         data-open-editor=""
         iconStart={<EditIcon />}
-        href={documentHref(metadata.id, metadata.rfcNumber, shared, "edit")}
+        href={documentHref(metadata.id, metadata.rfcNumber, shared, "edit", search)}
       >
         Edit
       </ButtonLink>

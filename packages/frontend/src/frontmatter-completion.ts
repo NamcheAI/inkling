@@ -7,7 +7,11 @@ import type {
 import { snippetCompletion } from "@codemirror/autocomplete";
 
 import { knownLifecycleStates } from "@earendil-works/inkling-core";
-import type { PersonDto } from "@earendil-works/inkling-protocol";
+import type {
+  CatalogResponse,
+  DocumentResponse,
+  PersonDto,
+} from "@earendil-works/inkling-protocol";
 
 export interface FrontmatterVocabulary {
   readonly labels: readonly string[];
@@ -267,4 +271,48 @@ function yamlScalar(value: string): string {
     !/^(?:false|null|true|yes|no|on|off)$/iu.test(value)
     ? value
     : JSON.stringify(value);
+}
+
+export function accountPerson(
+  person:
+    | {
+        readonly displayName: string;
+        readonly email?: string | undefined;
+        readonly id: string;
+      }
+    | undefined,
+): readonly PersonDto[] {
+  return person?.email === undefined
+    ? []
+    : [{ displayName: person.displayName, email: person.email, id: person.id }];
+}
+
+/** Labels, people, and states known from a document and, once loaded, the catalog. */
+export function collectFrontmatterVocabulary(
+  document: DocumentResponse,
+  catalog: CatalogResponse | undefined,
+  accountPeople: readonly PersonDto[],
+): FrontmatterVocabulary {
+  const metadata = [
+    document.metadata,
+    ...(catalog?.documents.map((summary) => summary.metadata) ?? []),
+  ];
+  const people = [
+    ...accountPeople,
+    ...(catalog?.people ?? []),
+    ...metadata.flatMap((item) => [...item.authors, ...item.reviewers, ...item.approvers]),
+  ];
+  return {
+    labels: [...new Set(metadata.flatMap((item) => item.labels))].toSorted((left, right) =>
+      left.localeCompare(right),
+    ),
+    people: [
+      ...new Map(
+        people.map((person) => [person.email.toLocaleLowerCase("en"), person] as const),
+      ).values(),
+    ],
+    states: [...new Set(metadata.map((item) => item.lifecycleState))].toSorted((left, right) =>
+      left.localeCompare(right),
+    ),
+  };
 }

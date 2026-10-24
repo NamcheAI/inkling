@@ -23,6 +23,7 @@ import {
   documentTrashExpiresAt,
   emptyCommentState,
   encodeBase62,
+  filterCatalog,
   IdGenerator,
   isDocumentTrashExpired,
   markDeleted,
@@ -37,9 +38,9 @@ import {
   resolveAuthorsByEmail,
   revokeApiKey,
   searchCatalog,
-  SecretHasher,
   SecureToken,
   takeAuthorizationCode,
+  TokenHasher,
   verifyAuthorizationCode,
   emptyAuthenticationState,
   emptyWorkspaceCatalog,
@@ -61,6 +62,14 @@ import type {
 
 const now = "2026-01-02T03:04:05.000Z";
 
+/** Hashes as `hashed:<token>`; `legacy:<token>` stands for a superseded scheme. */
+const fakeTokenHasher = {
+  hash: (token: string) => Effect.succeed(`hashed:${token}`),
+  isOutdated: (hash: string) => hash.startsWith("legacy:"),
+  verify: (token: string, hash: string) =>
+    Effect.succeed(hash === `hashed:${token}` || hash === `legacy:${token}`),
+};
+
 function catalogSummary(metadata: DocumentMetadata, body: string): CatalogSummary {
   return {
     approvers: metadata.approvers,
@@ -69,7 +78,6 @@ function catalogSummary(metadata: DocumentMetadata, body: string): CatalogSummar
     excerpt: normalizeSearchText(body).slice(0, 240),
     labels: metadata.labels,
     metadata,
-    normalizedBody: normalizeSearchText(body),
     publishedRevision: metadata.publishedRevision,
     revision: metadata.headRevision,
     reviewers: metadata.reviewers,
@@ -168,10 +176,7 @@ test("author email identifiers resolve known display names", async () => {
 
 test("workspace identity sessions retain their verified principal", async () => {
   const id = await Effect.runPromise(personId("writer@example.com"));
-  const hasher = {
-    hash: (secret: string) => Effect.succeed(`hashed:${secret}`),
-    verify: (secret: string, hash: string) => Effect.succeed(hash === `hashed:${secret}`),
-  };
+  const hasher = fakeTokenHasher;
   const ids = { generate: (purpose: string) => Effect.succeed(`${purpose}_12345678`) };
   const tokens = { generate: () => Effect.succeed("session-secret") };
   const created = await Effect.runPromise(
@@ -186,28 +191,42 @@ test("workspace identity sessions retain their verified principal", async () => 
       now,
     ).pipe(
       Effect.provideService(IdGenerator, ids),
-      Effect.provideService(SecretHasher, hasher),
+      Effect.provideService(TokenHasher, hasher),
       Effect.provideService(SecureToken, tokens),
     ),
   );
-  const principal = await Effect.runPromise(
+  const authenticated = await Effect.runPromise(
     authenticateSession(created.state, created.token, now).pipe(
-      Effect.provideService(SecretHasher, hasher),
+      Effect.provideService(TokenHasher, hasher),
     ),
   );
-  assert.deepEqual(principal, {
-    displayName: "Example Writer",
-    kind: "workspace",
-    personId: id,
-    role: "member",
+  assert.deepEqual(authenticated, {
+    principal: {
+      displayName: "Example Writer",
+      kind: "workspace",
+      personId: id,
+      role: "member",
+    },
+    updatedRecord: undefined,
   });
+
+  const legacyState = {
+    ...created.state,
+    sessions: created.state.sessions.map((session) => ({
+      ...session,
+      tokenHash: "legacy:session-secret",
+    })),
+  };
+  const upgraded = await Effect.runPromise(
+    authenticateSession(legacyState, created.token, now).pipe(
+      Effect.provideService(TokenHasher, hasher),
+    ),
+  );
+  assert.equal(upgraded.updatedRecord?.tokenHash, "hashed:session-secret");
 });
 
 test("legacy credentials without a domain identity are rejected", async () => {
-  const hasher = {
-    hash: (secret: string) => Effect.succeed(`hashed:${secret}`),
-    verify: (secret: string, hash: string) => Effect.succeed(hash === `hashed:${secret}`),
-  };
+  const hasher = fakeTokenHasher;
   const state = {
     apiKeys: [
       {
@@ -228,13 +247,13 @@ test("legacy credentials without a domain identity are rejected", async () => {
   };
   const session = await Effect.runPromise(
     authenticateSession(state, "legacy-session.session-secret", now).pipe(
-      Effect.provideService(SecretHasher, hasher),
+      Effect.provideService(TokenHasher, hasher),
       Effect.either,
     ),
   );
   const apiKey = await Effect.runPromise(
     authenticateApiKey(state, "inkling_legacy-key.key-secret", now).pipe(
-      Effect.provideService(SecretHasher, hasher),
+      Effect.provideService(TokenHasher, hasher),
       Effect.either,
     ),
   );
@@ -245,10 +264,7 @@ test("legacy credentials without a domain identity are rejected", async () => {
 test("API keys belong to their creator and retain that user's role", async () => {
   const accountId = await Effect.runPromise(personId("writer@example.com"));
   const otherId = await Effect.runPromise(personId("other@example.com"));
-  const hasher = {
-    hash: (secret: string) => Effect.succeed(`hashed:${secret}`),
-    verify: (secret: string, hash: string) => Effect.succeed(hash === `hashed:${secret}`),
-  };
+  const hasher = fakeTokenHasher;
   const created = await Effect.runPromise(
     createApiKey(
       emptyAuthenticationState(),
@@ -259,7 +275,7 @@ test("API keys belong to their creator and retain that user's role", async () =>
       Effect.provideService(IdGenerator, {
         generate: () => Effect.succeed("key_12345678"),
       }),
-      Effect.provideService(SecretHasher, hasher),
+      Effect.provideService(TokenHasher, hasher),
       Effect.provideService(SecureToken, { generate: () => Effect.succeed("key-secret") }),
     ),
   );
@@ -270,7 +286,7 @@ test("API keys belong to their creator and retain that user's role", async () =>
   assert.equal(apiKeyBelongsTo(created.record, otherId), false);
   const authenticated = await Effect.runPromise(
     authenticateApiKey(created.state, created.token, now).pipe(
-      Effect.provideService(SecretHasher, hasher),
+      Effect.provideService(TokenHasher, hasher),
     ),
   );
   assert.deepEqual(authenticated.principal, {
@@ -280,9 +296,32 @@ test("API keys belong to their creator and retain that user's role", async () =>
     personId: accountId,
     role: "member",
   });
+  assert.equal(authenticated.updatedRecord?.lastUsedAt, now);
+
+  // Use is recorded at most hourly, so most requests write nothing.
+  const used = { ...created.state, apiKeys: [{ ...created.record, lastUsedAt: now }] };
+  const soonAfter = "2026-01-02T03:34:05.000Z";
+  const hourAfter = "2026-01-02T04:04:05.000Z";
+  const [quiet, recorded, upgraded] = await Promise.all(
+    [
+      authenticateApiKey(used, created.token, soonAfter),
+      authenticateApiKey(used, created.token, hourAfter),
+      authenticateApiKey(
+        {
+          ...used,
+          apiKeys: [{ ...created.record, tokenHash: "legacy:key-secret" }],
+        },
+        created.token,
+        soonAfter,
+      ),
+    ].map((effect) => Effect.runPromise(effect.pipe(Effect.provideService(TokenHasher, hasher)))),
+  );
+  assert.equal(quiet?.updatedRecord, undefined);
+  assert.equal(recorded?.updatedRecord?.lastUsedAt, hourAfter);
+  assert.equal(upgraded?.updatedRecord?.tokenHash, "hashed:key-secret");
   const legacyToken = await Effect.runPromise(
     authenticateApiKey(created.state, `inkling_${created.token}`, now).pipe(
-      Effect.provideService(SecretHasher, hasher),
+      Effect.provideService(TokenHasher, hasher),
     ),
   );
   assert.deepEqual(legacyToken.principal, authenticated.principal);
@@ -299,10 +338,7 @@ test("API keys belong to their creator and retain that user's role", async () =>
 
 test("authorization codes are single-use and bound to client, redirect, and PKCE", async () => {
   const accountId = await Effect.runPromise(personId("writer@example.com"));
-  const hasher = {
-    hash: (secret: string) => Effect.succeed(`hashed:${secret}`),
-    verify: (secret: string, hash: string) => Effect.succeed(hash === `hashed:${secret}`),
-  };
+  const hasher = fakeTokenHasher;
   const grant = {
     clientId: "mcp_client",
     clientName: "Agent",
@@ -317,7 +353,7 @@ test("authorization codes are single-use and bound to client, redirect, and PKCE
       now,
     ).pipe(
       Effect.provideService(IdGenerator, { generate: () => Effect.succeed("oac_1") }),
-      Effect.provideService(SecretHasher, hasher),
+      Effect.provideService(TokenHasher, hasher),
       Effect.provideService(SecureToken, { generate: () => Effect.succeed("code-secret") }),
     ),
   );
@@ -333,7 +369,7 @@ test("authorization codes are single-use and bound to client, redirect, and PKCE
       ? Promise.resolve(Either.left("missing"))
       : Effect.runPromise(
           verifyAuthorizationCode(taken.record, taken.secret, { ...grant, ...overrides }, at).pipe(
-            Effect.provideService(SecretHasher, hasher),
+            Effect.provideService(TokenHasher, hasher),
             Effect.either,
           ),
         );
@@ -667,9 +703,24 @@ test("catalog search covers full bodies and Gmail-style metadata filters", async
       { field: "state", negated: true, value: "abandoned" },
     ],
   });
-  const fullText = searchCatalog(state, '"durable checkpoint"');
+  assert.deepEqual(searchCatalog(state, '"durable checkpoint"'), []);
+  const fullText = searchCatalog(state, '"durable checkpoint"', {
+    bodyMatches: new Map([["durable checkpoint", new Set([rfcMetadata.id])]]),
+  });
   assert.equal(fullText[0]?.documentId, rfcMetadata.id);
-  assert.match(fullText[0]?.excerpt ?? "", /durable checkpoint/u);
+  assert.deepEqual(
+    searchCatalog(state, "-budget", {
+      bodyMatches: new Map([["budget", new Set([noteMetadata.id])]]),
+    }).map((summary) => summary.documentId),
+    [rfcMetadata.id],
+  );
+  assert.deepEqual(
+    filterCatalog(state, parseCatalogSearchQuery("durable label:platform -is:confidential")).map(
+      (summary) => summary.documentId,
+    ),
+    [rfcMetadata.id],
+  );
+  assert.equal(normalizeSearchText("Naïve Café"), "naive cafe");
   assert.equal(
     searchCatalog(state, "label:platform -is:confidential")[0]?.documentId,
     rfcMetadata.id,

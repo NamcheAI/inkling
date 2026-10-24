@@ -1,12 +1,18 @@
 import { useState } from "react";
 
-import { KeyboardArrowDownIcon, KeyIcon, LogoutIcon } from "@earendil-works/elanor-icons-react";
+import {
+  KeyboardArrowDownIcon,
+  KeyIcon,
+  LogoutIcon,
+  ShareIcon,
+} from "@earendil-works/elanor-icons-react";
 import { Button, Menu } from "@earendil-works/elanor-react";
 import type { AuthenticationStatus } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService, ApiError } from "../api.ts";
 import { useAppContext } from "../app-context.tsx";
 import { useEffectAction } from "../effect-hooks.ts";
+import { AgentAccessDialog } from "./agent-access-dialog.tsx";
 import styles from "./app-header.module.css";
 import { SettingsDialog } from "./settings-dialog.tsx";
 
@@ -17,7 +23,7 @@ export interface AccountControlProps {
 
 export function AccountControl({ account, api }: AccountControlProps): React.JSX.Element {
   const { navigate } = useAppContext();
-  const [apiKeysOpen, setApiKeysOpen] = useState(false);
+  const [openDialog, setOpenDialog] = useState<"agent-access" | "api-keys">();
   const logout = useEffectAction<void, void, ApiError>(() => api.logout);
   const accountName = account.displayName.trim() || account.email?.trim() || "Account";
 
@@ -39,9 +45,16 @@ export function AccountControl({ account, api }: AccountControlProps): React.JSX
           <Menu.Positioner align="end" sideOffset={4}>
             <Menu.Popup data-account-menu="">
               <Menu.Item
+                data-open-agent-access=""
+                icon={<ShareIcon />}
+                onClick={() => setOpenDialog("agent-access")}
+              >
+                Agent access
+              </Menu.Item>
+              <Menu.Item
                 data-open-api-keys=""
                 icon={<KeyIcon />}
-                onClick={() => setApiKeysOpen(true)}
+                onClick={() => setOpenDialog("api-keys")}
               >
                 API keys
               </Menu.Item>
@@ -61,7 +74,19 @@ export function AccountControl({ account, api }: AccountControlProps): React.JSX
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
-      {apiKeysOpen ? <SettingsDialog api={api} onClose={() => setApiKeysOpen(false)} /> : null}
+      {openDialog === "agent-access" ? (
+        <AgentAccessDialog
+          onClose={() => setOpenDialog(undefined)}
+          onOpenApiKeys={() => setOpenDialog("api-keys")}
+        />
+      ) : null}
+      {openDialog === "api-keys" ? (
+        <SettingsDialog
+          api={api}
+          onClose={() => setOpenDialog(undefined)}
+          onOpenAgentAccess={() => setOpenDialog("agent-access")}
+        />
+      ) : null}
     </>
   );
 }

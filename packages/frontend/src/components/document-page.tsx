@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import { Heading, KeyValue } from "@earendil-works/elanor-react";
@@ -23,7 +23,7 @@ export function DocumentPage({
   metadata,
   presentation = "reader",
 }: DocumentPageProps): React.JSX.Element {
-  const wide = useMediaQuery("(width > 68rem)");
+  const wide = useMediaQuery("(width > 68rem)", true);
   const tableOfContents = (
     <DocumentTableOfContents
       headings={headings}
@@ -145,15 +145,22 @@ function PeopleList({
   );
 }
 
-/** Whether a media query matches, following changes. */
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => matchMedia(query).matches);
-  useEffect(() => {
-    const media = matchMedia(query);
-    const update = (): void => setMatches(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, [query]);
-  return matches;
+/**
+ * Whether a media query matches, following changes. The server renders for
+ * `serverMatches`, and hydration switches to the browser's answer.
+ */
+function useMediaQuery(query: string, serverMatches: boolean): boolean {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const media = matchMedia(query);
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    },
+    [query],
+  );
+  return useSyncExternalStore(
+    subscribe,
+    () => matchMedia(query).matches,
+    () => serverMatches,
+  );
 }

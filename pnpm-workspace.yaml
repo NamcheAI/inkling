@@ -1,5 +1,6 @@
 packages:
   - "packages/*"
+  - "deployments/*"
   - "vendor/elanor/*"
 
 # The vendored Elanor packages declare React as a peer and ship declarations that import its

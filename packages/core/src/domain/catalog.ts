@@ -30,7 +30,6 @@ export interface CatalogSummary {
   readonly excerpt: string;
   /** Complete metadata projection for workspace reads without loading a document authority. */
   readonly metadata?: DocumentMetadata | undefined;
-  readonly normalizedBody: string;
   readonly publishedRevision?: DocumentRevision | undefined;
 }
 
@@ -63,7 +62,11 @@ export interface RfcAllocation {
   readonly rfcNumber: number;
 }
 
+/** Documents whose indexed body matches each normalized free-text term. */
+export type CatalogBodyMatches = ReadonlyMap<string, ReadonlySet<DocumentId>>;
+
 export interface CatalogSearchOptions {
+  readonly bodyMatches?: CatalogBodyMatches | undefined;
   readonly currentPersonId?: PersonId | undefined;
   readonly includeDeleted?: boolean | undefined;
   readonly onlyDeleted?: boolean | undefined;
@@ -106,10 +109,11 @@ export function normalizeWorkspaceCatalog(state: WorkspaceCatalogState): Workspa
     entries: state.entries.map((entry) => {
       if (entry.summary === undefined) return entry;
       const legacy = entry.summary as CatalogSummary & {
+        readonly normalizedBody?: string | undefined;
         readonly sensitivity?: "confidential" | "normal" | undefined;
         readonly visibility: Visibility | "workspace";
       };
-      const { sensitivity, ...withoutSensitivity } = legacy;
+      const { normalizedBody: _normalizedBody, sensitivity, ...withoutSensitivity } = legacy;
       const visibility =
         sensitivity === "confidential" || legacy.visibility === "confidential"
           ? "confidential"
@@ -277,7 +281,7 @@ export function searchCatalog(
         (summary.visibility === "public" && summary.publishedRevision !== undefined),
     )
     .flatMap((summary) => {
-      const score = scoreSummary(summary, parsed, state.people, options.currentPersonId);
+      const score = scoreSummary(summary, parsed, state.people, options);
       return score === undefined ? [] : [{ score, summary }];
     });
   const summaries =
@@ -294,7 +298,36 @@ export function searchCatalog(
               Date.parse(right.summary.updatedAt) - Date.parse(left.summary.updatedAt),
           )
           .map(({ summary }) => summary);
-  return summaries.slice(0, limit).map((summary) => withMatchingExcerpt(summary, parsed));
+  return summaries.slice(0, limit);
+}
+
+/** Active documents that satisfy every structured filter in the query; free text is ignored. */
+export function filterCatalog(
+  state: WorkspaceCatalogState,
+  query: CatalogSearchQuery,
+  options: Pick<CatalogSearchOptions, "currentPersonId"> = {},
+): readonly CatalogSummary[] {
+  const filters = query.terms.filter((term) => term.field !== undefined);
+  return state.entries.flatMap((entry) => {
+    const summary = entry.summary;
+    if (entry.status !== "active" || summary === undefined) return [];
+    if (filters.length === 0) return [summary];
+    const indexed = indexSummary(summary, state.people);
+    return filters.every((term) => {
+      const field = term.field;
+      if (field === undefined) return true;
+      const matched = matchesSearchFilter(
+        summary,
+        indexed,
+        field,
+        term.value,
+        options.currentPersonId,
+      );
+      return term.negated ? !matched : matched;
+    })
+      ? [summary]
+      : [];
+  });
 }
 
 export function parseCatalogSearchQuery(query: string): CatalogSearchQuery {
@@ -375,6 +408,7 @@ export function findPerson(
 export function normalizeSearchText(value: string): string {
   return value
     .normalize("NFKD")
+    .replace(/\p{Mark}+/gu, "")
     .toLocaleLowerCase("en")
     .replace(/[^\p{Letter}\p{Number}]+/gu, " ")
     .trim();
@@ -384,7 +418,6 @@ interface IndexedCatalogSummary {
   readonly all: string;
   readonly approvers: string;
   readonly authors: string;
-  readonly body: string;
   readonly labels: readonly string[];
   readonly people: string;
   readonly reviewers: string;
@@ -414,21 +447,24 @@ function scoreSummary(
   summary: CatalogSummary,
   query: CatalogSearchQuery,
   directory: readonly PeopleDirectoryEntry[],
-  currentPersonId?: PersonId,
+  options: CatalogSearchOptions,
 ): number | undefined {
   if (query.terms.length === 0) return 1;
   const indexed = indexSummary(summary, directory);
   let score = 0;
   for (const term of query.terms) {
+    const bodyMatched =
+      term.field === undefined &&
+      options.bodyMatches?.get(term.value)?.has(summary.documentId) === true;
     const matched =
       term.field === undefined
-        ? indexed.all.includes(term.value)
-        : matchesSearchFilter(summary, indexed, term.field, term.value, currentPersonId);
+        ? bodyMatched || indexed.all.includes(term.value)
+        : matchesSearchFilter(summary, indexed, term.field, term.value, options.currentPersonId);
     if (term.negated ? matched : !matched) return undefined;
     if (!term.negated) {
       score +=
         term.field === undefined
-          ? scoreFreeText(summary, indexed, term.value)
+          ? scoreFreeText(summary, indexed, term.value, bodyMatched)
           : scoreFilter(term.field);
     }
   }
@@ -472,13 +508,11 @@ function indexSummary(
       state,
       visibility,
       summary.metadata?.relatedDocuments.map((related) => related.documentId).join(" ") ?? "",
-      summary.normalizedBody,
     ]
       .filter(Boolean)
       .join(" "),
     approvers,
     authors,
-    body: summary.normalizedBody,
     labels,
     people,
     reviewers,
@@ -564,6 +598,7 @@ function scoreFreeText(
   summary: CatalogSummary,
   indexed: IndexedCatalogSummary,
   value: string,
+  bodyMatched: boolean,
 ): number {
   let score = 0;
   if (indexed.rfc === value || String(summary.rfcNumber ?? "") === String(Number(value))) {
@@ -577,7 +612,7 @@ function scoreFreeText(
   if (indexed.people.includes(value)) score += 100;
   if (indexed.state === value) score += 90;
   if (indexed.visibility === value) score += 60;
-  if (indexed.body.includes(value)) score += 20;
+  if (bodyMatched) score += 20;
   return score + 1;
 }
 
@@ -599,36 +634,6 @@ function scoreFilter(field: CatalogSearchField): number {
     case "visibility":
       return 80;
   }
-}
-
-function withMatchingExcerpt(summary: CatalogSummary, query: CatalogSearchQuery): CatalogSummary {
-  const excerpt = matchingExcerpt(summary, query);
-  return excerpt === summary.excerpt ? summary : { ...summary, excerpt };
-}
-
-function matchingExcerpt(summary: CatalogSummary, query: CatalogSearchQuery): string {
-  const candidates = query.terms.filter(
-    (term) =>
-      !term.negated && term.field === undefined && summary.normalizedBody.includes(term.value),
-  );
-  const first = candidates
-    .map((term) => summary.normalizedBody.indexOf(term.value))
-    .filter((position) => position >= 0)
-    .toSorted((left, right) => left - right)[0];
-  if (first === undefined) return summary.excerpt;
-  if (summary.normalizedBody.length <= 240) return summary.normalizedBody;
-
-  let start = Math.max(0, first - 80);
-  let end = Math.min(summary.normalizedBody.length, start + 240);
-  if (start > 0) {
-    const boundary = summary.normalizedBody.indexOf(" ", start);
-    if (boundary !== -1 && boundary < first) start = boundary + 1;
-  }
-  if (end < summary.normalizedBody.length) {
-    const boundary = summary.normalizedBody.lastIndexOf(" ", end);
-    if (boundary > first) end = boundary;
-  }
-  return `${start > 0 ? "…" : ""}${summary.normalizedBody.slice(start, end)}${end < summary.normalizedBody.length ? "…" : ""}`;
 }
 
 function tokenizeSearchQuery(query: string): readonly string[] {

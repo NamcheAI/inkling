@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { Mermaid } from "mermaid";
 import { Effect } from "effect";
 
@@ -25,12 +25,43 @@ export interface RenderedMarkdown {
   readonly title: string | undefined;
 }
 
+export type MarkdownRenderResult = Effect.Effect.Success<ReturnType<typeof renderer.render>>;
+
+/**
+ * Markdown the server already rendered, by render key. Rendering loads code
+ * languages asynchronously, so server rendering resolves it up front.
+ */
+export const PrerenderedMarkdownContext = createContext<
+  ReadonlyMap<string, MarkdownRenderResult> | undefined
+>(undefined);
+
+/** Identifies one rendering of a source without repeating the source. */
+export function markdownRenderKey(source: string, sourcePositions: boolean): string {
+  let hash = 0x811c_9dc5;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 0x0100_0193) >>> 0;
+  }
+  return `${sourcePositions ? "positioned" : "plain"}:${source.length}:${hash.toString(36)}`;
+}
+
+/** Renders Markdown exactly as `useRenderedMarkdown` does. */
+export function renderMarkdown(
+  source: string,
+  sourcePositions: boolean,
+): ReturnType<typeof renderer.render> {
+  return renderer.render(source, { sourcePositions });
+}
+
 export function useRenderedMarkdown(source: string, sourcePositions: boolean): RenderedMarkdown {
-  const query = useMemo(
-    () => renderer.render(source, { sourcePositions }),
-    [source, sourcePositions],
+  const query = useMemo(() => renderMarkdown(source, sourcePositions), [source, sourcePositions]);
+  const key = useMemo(() => markdownRenderKey(source, sourcePositions), [source, sourcePositions]);
+  const prerendered = useContext(PrerenderedMarkdownContext)?.get(key);
+  const { state } = useEffectQuery(
+    query,
+    key,
+    prerendered === undefined ? undefined : { data: prerendered, key },
   );
-  const { state } = useEffectQuery(query, `${sourcePositions ? "positioned" : "plain"}:${source}`);
   return {
     error: state.status === "failure" ? state.error.message : undefined,
     frontmatter: state.data?.frontmatter,
@@ -95,6 +126,8 @@ export function useThemeRevision(): number {
 }
 
 function loadMermaid(): Promise<Mermaid> {
+  // Diagrams render in the browser; keep Mermaid out of the server renderer.
+  if (import.meta.env.SSR) return Promise.reject(new Error("Mermaid renders in the browser."));
   mermaidPromise ??= import("mermaid").then(({ default: mermaid }) => mermaid);
   return mermaidPromise;
 }

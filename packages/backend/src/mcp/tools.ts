@@ -7,6 +7,7 @@ import {
   DocumentHistoryResponseSchema,
   DocumentMetadataSchema,
   DocumentResponseSchema,
+  PassageSearchResponseSchema,
 } from "@earendil-works/inkling-protocol";
 import type {
   CatalogResponse,
@@ -24,6 +25,7 @@ import {
   renderComments,
   renderDocument,
   renderHistory,
+  renderPassages,
   sliceLines,
 } from "./format.ts";
 
@@ -221,7 +223,7 @@ const searchDocuments = defineTool({
   }),
   description: `List or search documents in the workspace. Without a query, lists recently updated documents.
 
-Plain terms search titles, full working-draft bodies, RFC numbers, labels, states, and people; terms are combined with AND. Quote phrases and prefix a term with - to exclude it. Filters: label:platform, state:discussion, visibility:public|private|confidential, author:email, reviewer:name, approver:name, person:name, rfc:42, is:rfc, is:note, is:published, is:unpublished, has:publication.`,
+Plain terms search titles, RFC numbers, labels, states, and people by substring and working-draft bodies by word prefix; terms are combined with AND. Quote phrases and prefix a term with - to exclude it. To find the sections that discuss something, use search_passages instead. Filters: label:platform, state:discussion, visibility:public|private|confidential, author:email, reviewer:name, approver:name, person:name, rfc:42, is:rfc, is:note, is:published, is:unpublished, has:publication.`,
   idempotent: true,
   name: "search_documents",
   properties: {
@@ -239,6 +241,63 @@ Plain terms search titles, full working-draft bodies, RFC numbers, labels, state
       .request("GET", `/api/documents?q=${encodeURIComponent(query)}`, CatalogResponseSchema)
       .pipe(Effect.map((catalog) => catalogOutput(api, catalog, limit, "No documents matched."))),
   title: "Search documents",
+});
+
+const DEFAULT_PASSAGE_LIMIT = 10;
+const MAX_PASSAGE_LIMIT = 50;
+
+const searchPassages = defineTool({
+  arguments: Schema.Struct({
+    limit: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(1, MAX_PASSAGE_LIMIT))),
+    query: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(500)),
+  }),
+  description: `Find the sections of working drafts that best answer a question or mention a topic, ranked by relevance across every document you can read. Each result names the document, its heading path, and the line range to pass to read_document as start_line and end_line.
+
+Write natural-language questions or keywords; documents matching more of the terms rank higher, and when the workspace has semantic search enabled, passages about the same idea in different words are found too. At most three passages per document are returned. The search_documents filters (label:, state:, author:, is:rfc, ...) and -term exclusions narrow the documents searched. Line numbers refer to the stated revision; re-read if the document has changed since.`,
+  idempotent: true,
+  name: "search_passages",
+  properties: {
+    limit: {
+      description: `Maximum passages to return (default ${DEFAULT_PASSAGE_LIMIT}).`,
+      maximum: MAX_PASSAGE_LIMIT,
+      minimum: 1,
+      type: "integer",
+    },
+    query: {
+      description: "Question, keywords, and optional filters.",
+      maxLength: 500,
+      minLength: 1,
+      type: "string",
+    },
+  },
+  required: ["query"],
+  risk: "read",
+  run: ({ limit = DEFAULT_PASSAGE_LIMIT, query }, api) =>
+    api
+      .request(
+        "GET",
+        `/api/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+        PassageSearchResponseSchema,
+      )
+      .pipe(
+        Effect.map((result) => ({
+          structured: {
+            passages: result.passages.map((passage) => ({
+              ...passage,
+              url: documentUrl(api.origin, {
+                id: passage.documentId,
+                rfcNumber: passage.rfcNumber,
+              }),
+            })),
+            semantic: result.semantic,
+          },
+          text:
+            result.passages.length === 0
+              ? "No passages matched. Try different or fewer terms."
+              : renderPassages(result.passages),
+        })),
+      ),
+  title: "Search passages",
 });
 
 const listTrash = defineTool({
@@ -959,6 +1018,7 @@ const restoreDocument = defineTool({
 
 export const inklingTools: readonly InklingTool[] = [
   searchDocuments,
+  searchPassages,
   readDocument,
   listDocumentHistory,
   createDocument,

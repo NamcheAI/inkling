@@ -1,7 +1,7 @@
 import { Data, Effect } from "effect";
 
 import { identifierTag } from "../application/identifiers.ts";
-import { IdGenerator, SecretHasher, SecureToken } from "../application/ports.ts";
+import { IdGenerator, SecureToken, TokenHasher } from "../application/ports.ts";
 import type { StorageError } from "../application/ports.ts";
 import type { PersonId } from "./document.ts";
 import type { Principal, WorkspaceRole } from "./authorization.ts";
@@ -107,11 +107,21 @@ export function emptyAuthenticationState(): AuthenticationState {
   return { apiKeys: [], authorizationCodes: [], sessions: [] };
 }
 
+export interface AuthenticatedSession {
+  readonly principal: Principal;
+  /** A replacement for the stored record, set when its hash scheme is outdated. */
+  readonly updatedRecord?: SessionRecord | undefined;
+}
+
 export function authenticateSession(
   state: AuthenticationState,
   token: string,
   now: string,
-): Effect.Effect<Principal, AuthenticationError | StorageError, typeof SecretHasher.Service> {
+): Effect.Effect<
+  AuthenticatedSession,
+  AuthenticationError | StorageError,
+  typeof TokenHasher.Service
+> {
   return Effect.gen(function* () {
     const [id, secret, extra] = token.split(".");
     if (id === undefined || secret === undefined || extra !== undefined) {
@@ -124,7 +134,7 @@ export function authenticateSession(
         "The session token is invalid or expired.",
       );
     }
-    const hasher = yield* SecretHasher;
+    const hasher = yield* TokenHasher;
     if (!(yield* hasher.verify(secret, record.tokenHash))) {
       return yield* authenticationFailure("invalid_token", "The session token is invalid.");
     }
@@ -132,10 +142,15 @@ export function authenticateSession(
       return yield* authenticationFailure("invalid_token", "The session token is invalid.");
     }
     return {
-      displayName: record.displayName,
-      kind: "workspace",
-      personId: record.personId,
-      role: record.role,
+      principal: {
+        displayName: record.displayName,
+        kind: "workspace",
+        personId: record.personId,
+        role: record.role,
+      },
+      updatedRecord: hasher.isOutdated(record.tokenHash)
+        ? { ...record, tokenHash: yield* hasher.hash(secret) }
+        : undefined,
     };
   });
 }
@@ -148,10 +163,10 @@ export function createWorkspaceSession(
 ): Effect.Effect<
   CreatedSession,
   AuthenticationError | StorageError,
-  typeof IdGenerator.Service | typeof SecretHasher.Service | typeof SecureToken.Service
+  typeof IdGenerator.Service | typeof TokenHasher.Service | typeof SecureToken.Service
 > {
   return Effect.gen(function* () {
-    const hasher = yield* SecretHasher;
+    const hasher = yield* TokenHasher;
     const ids = yield* IdGenerator;
     const tokens = yield* SecureToken;
     const id = yield* ids.generate(identifierTag.session);
@@ -212,14 +227,14 @@ export function createApiKey(
 ): Effect.Effect<
   CreatedApiKey,
   AuthenticationError | StorageError,
-  typeof IdGenerator.Service | typeof SecretHasher.Service | typeof SecureToken.Service
+  typeof IdGenerator.Service | typeof TokenHasher.Service | typeof SecureToken.Service
 > {
   return Effect.gen(function* () {
     const normalizedLabel = label.trim();
     if (normalizedLabel.length === 0 || normalizedLabel.length > 200) {
       return yield* authenticationFailure("invalid_token", "API key labels must be non-empty.");
     }
-    const hasher = yield* SecretHasher;
+    const hasher = yield* TokenHasher;
     const ids = yield* IdGenerator;
     const tokens = yield* SecureToken;
     const id = yield* ids.generate(identifierTag.apiKey);
@@ -244,14 +259,26 @@ export function createApiKey(
   });
 }
 
+/** How stale `lastUsedAt` may become before a request records its use again. */
+const apiKeyUsageResolutionMilliseconds = 60 * 60 * 1000;
+
+export interface AuthenticatedApiKey {
+  readonly principal: Principal;
+  /**
+   * A replacement for the stored record, set only when its last use is stale
+   * or its hash scheme is outdated, so most requests write nothing.
+   */
+  readonly updatedRecord?: ApiKeyRecord | undefined;
+}
+
 export function authenticateApiKey(
   state: AuthenticationState,
   token: string,
   now: string,
 ): Effect.Effect<
-  { readonly principal: Principal; readonly state: AuthenticationState },
+  AuthenticatedApiKey,
   AuthenticationError | StorageError,
-  typeof SecretHasher.Service
+  typeof TokenHasher.Service
 > {
   return Effect.gen(function* () {
     // Keys issued before compact prefixes used an additional `inkling_` marker.
@@ -261,8 +288,7 @@ export function authenticateApiKey(
     }
     const id = match[1];
     const secret = match[2];
-    const index = state.apiKeys.findIndex((record) => record.id === id);
-    const record = state.apiKeys[index];
+    const record = state.apiKeys.find((candidate) => candidate.id === id);
     if (
       id === undefined ||
       secret === undefined ||
@@ -271,14 +297,17 @@ export function authenticateApiKey(
     ) {
       return yield* authenticationFailure("invalid_token", "The API key is invalid or revoked.");
     }
-    const hasher = yield* SecretHasher;
+    const hasher = yield* TokenHasher;
     if (!(yield* hasher.verify(secret, record.tokenHash))) {
       return yield* authenticationFailure("invalid_token", "The API key is invalid.");
     }
     if (record.personId === undefined || !isWorkspaceRole(record.role)) {
       return yield* authenticationFailure("invalid_token", "The API key is invalid or revoked.");
     }
-    const updated = { ...record, lastUsedAt: now };
+    const outdatedHash = hasher.isOutdated(record.tokenHash);
+    const staleUse =
+      record.lastUsedAt === undefined ||
+      Date.parse(now) - Date.parse(record.lastUsedAt) >= apiKeyUsageResolutionMilliseconds;
     return {
       principal: {
         displayName: record.displayName,
@@ -287,10 +316,14 @@ export function authenticateApiKey(
         personId: record.personId,
         role: record.role,
       },
-      state: {
-        ...state,
-        apiKeys: state.apiKeys.map((item, itemIndex) => (itemIndex === index ? updated : item)),
-      },
+      updatedRecord:
+        outdatedHash || staleUse
+          ? {
+              ...record,
+              lastUsedAt: now,
+              tokenHash: outdatedHash ? yield* hasher.hash(secret) : record.tokenHash,
+            }
+          : undefined,
     };
   });
 }
@@ -330,10 +363,10 @@ export function createAuthorizationCode(
 ): Effect.Effect<
   CreatedAuthorizationCode,
   AuthenticationError | StorageError,
-  typeof IdGenerator.Service | typeof SecretHasher.Service | typeof SecureToken.Service
+  typeof IdGenerator.Service | typeof TokenHasher.Service | typeof SecureToken.Service
 > {
   return Effect.gen(function* () {
-    const hasher = yield* SecretHasher;
+    const hasher = yield* TokenHasher;
     const ids = yield* IdGenerator;
     const tokens = yield* SecureToken;
     const id = yield* ids.generate(identifierTag.authorizationCode);
@@ -407,9 +440,9 @@ export function verifyAuthorizationCode(
   secret: string,
   grant: Omit<AuthorizationGrant, "clientName">,
   now: string,
-): Effect.Effect<ApiKeyIdentity, AuthenticationError | StorageError, typeof SecretHasher.Service> {
+): Effect.Effect<ApiKeyIdentity, AuthenticationError | StorageError, typeof TokenHasher.Service> {
   return Effect.gen(function* () {
-    const hasher = yield* SecretHasher;
+    const hasher = yield* TokenHasher;
     const valid =
       Date.parse(record.expiresAt) > Date.parse(now) &&
       record.clientId === grant.clientId &&

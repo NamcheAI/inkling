@@ -1,61 +1,78 @@
-import { lazy, Suspense } from "react";
+import { Suspense, use } from "react";
 
 import { Button, Container, EmptyState, Layout } from "@earendil-works/elanor-react";
-import type {
-  AuthenticationStatus,
-  CatalogResponse,
-  DocumentResponse,
-} from "@earendil-works/inkling-protocol";
 
-import type { ApiClientService, ApiError } from "../api.ts";
-import type { FrontmatterVocabulary } from "../frontmatter-completion.ts";
+import type { ApiError } from "../api.ts";
+import { useCurrentUrl } from "../app-context.tsx";
+import type { EditorScreen as EditorScreenComponent } from "../editor-screen.tsx";
 import type { EffectQueryState } from "../effect-hooks.ts";
 import { LabelsScreen } from "../labels-screen.tsx";
+import type { ReaderScreen as ReaderScreenComponent } from "../reader-screen.tsx";
+import type { RouteModel } from "../route-data.ts";
 import { TrashScreen } from "../trash-screen.tsx";
+import { signInHref } from "../ui.ts";
 import { WorkspaceScreen } from "../workspace-screen.tsx";
+import { ButtonLink } from "./button-link.tsx";
 import styles from "./route-view.module.css";
 import { SharePasswordScreen } from "./share-password-screen.tsx";
 
-const loadEditorScreen = () =>
-  import("../editor-screen.tsx").then(({ EditorScreen }) => ({ default: EditorScreen }));
-const loadReaderScreen = () =>
-  import("../reader-screen.tsx").then(({ ReaderScreen }) => ({ default: ReaderScreen }));
-const EditorScreen = lazy(loadEditorScreen);
-const ReaderScreen = lazy(loadReaderScreen);
+/** Thrown while server rendering the editor, which only renders in the browser. */
+export const clientOnlyDigest = "inkling-client-only";
 
-interface RouteBase {
-  readonly account?: NonNullable<AuthenticationStatus["principal"]> | undefined;
-  readonly api: ApiClientService;
-  readonly capabilityToken: string | undefined;
+interface ScreenLoader<T> {
+  /** The screen, once its code has loaded. */
+  readonly loaded: () => T | undefined;
+  /** Loads the screen's code once; after a failure, the next call tries again. */
+  readonly load: () => Promise<T>;
 }
 
-export type RouteModel =
-  | (RouteBase & {
-      readonly document: DocumentResponse;
-      readonly frontmatterVocabulary: FrontmatterVocabulary;
-      readonly publicDocument: boolean;
-      readonly screen: "editor" | "reader";
-      readonly shared: boolean;
-    })
-  | (RouteBase & {
-      readonly catalog: CatalogResponse;
-      readonly publicCatalog: boolean;
-      readonly screen: "labels";
-      readonly selectedLabel: string | undefined;
-    })
-  | (RouteBase & {
-      readonly catalog: CatalogResponse;
-      readonly publicCatalog: boolean;
-      readonly screen: "workspace";
-    })
-  | (RouteBase & {
-      readonly catalog: CatalogResponse;
-      readonly screen: "trash";
-    })
-  | (RouteBase & {
-      readonly documentId: string;
-      readonly screen: "share-password";
-    });
+function screenLoader<T>(load: () => Promise<T>): ScreenLoader<T> {
+  let loaded: T | undefined;
+  let loading: Promise<T> | undefined;
+  return {
+    load: () =>
+      (loading ??= load().then(
+        (screen) => (loaded = screen),
+        (error: unknown) => {
+          loading = undefined;
+          throw error;
+        },
+      )),
+    loaded: () => loaded,
+  };
+}
+
+// The editor needs the DOM and a live collaboration session, so the server
+// renders its loading state and leaves the editor to the browser.
+const editorScreen = screenLoader<typeof EditorScreenComponent>(
+  import.meta.env.SSR
+    ? () =>
+        Promise.reject(
+          Object.assign(new Error("The editor renders in the browser."), {
+            digest: clientOnlyDigest,
+          }),
+        )
+    : () => import("../editor-screen.tsx").then((module) => module.EditorScreen),
+);
+const readerScreen = screenLoader<typeof ReaderScreenComponent>(() =>
+  import("../reader-screen.tsx").then((module) => module.ReaderScreen),
+);
+
+// Routes load their screen before rendering it, so it usually renders at
+// once; otherwise it suspends until its code arrives.
+function EditorScreen(
+  props: React.ComponentProps<typeof EditorScreenComponent>,
+): React.JSX.Element {
+  const Screen = editorScreen.loaded() ?? use(editorScreen.load());
+  return <Screen {...props} />;
+}
+
+function ReaderScreen(
+  props: React.ComponentProps<typeof ReaderScreenComponent>,
+): React.JSX.Element {
+  const Screen = readerScreen.loaded() ?? use(readerScreen.load());
+  return <Screen {...props} />;
+}
 
 export interface RouteViewProps {
   readonly navigationKey: number;
@@ -67,25 +84,7 @@ export function RouteView({ navigationKey, refresh, state }: RouteViewProps): Re
   const model = state.data;
   if (model === undefined) {
     if (state.status === "failure") {
-      return (
-        <Layout.Main className={styles["fatal"]} id="app" tabIndex={-1}>
-          <Container>
-            <EmptyState.Root>
-              <EmptyState.Body>
-                <EmptyState.Copy>
-                  <EmptyState.Title level={1}>Inkling could not open.</EmptyState.Title>
-                  <EmptyState.Description>{state.error.message}</EmptyState.Description>
-                </EmptyState.Copy>
-                <EmptyState.Actions>
-                  <Button data-retry="" onClick={refresh}>
-                    Try again
-                  </Button>
-                </EmptyState.Actions>
-              </EmptyState.Body>
-            </EmptyState.Root>
-          </Container>
-        </Layout.Main>
-      );
+      return <FailureScreen error={state.error} refresh={refresh} />;
     }
     return <LoadingScreen />;
   }
@@ -146,6 +145,47 @@ function LoadingScreen(): React.JSX.Element {
   return <Layout.Main aria-busy="true" id="app" tabIndex={-1} />;
 }
 
+function FailureScreen({
+  error,
+  refresh,
+}: {
+  readonly error: ApiError;
+  readonly refresh: () => void;
+}): React.JSX.Element {
+  const url = useCurrentUrl();
+  const signIn = error.code === "sign_in_required";
+  const denied = signIn || error.code === "forbidden";
+  return (
+    <Layout.Main className={styles["fatal"]} id="app" tabIndex={-1}>
+      <Container>
+        <EmptyState.Root>
+          <EmptyState.Body>
+            <EmptyState.Copy>
+              <EmptyState.Title level={1}>
+                {denied ? "You don’t have access." : "Inkling could not open."}
+              </EmptyState.Title>
+              <EmptyState.Description>{error.message}</EmptyState.Description>
+            </EmptyState.Copy>
+            {denied && !signIn ? null : (
+              <EmptyState.Actions>
+                {signIn ? (
+                  <ButtonLink data-sign-in="" href={signInHref(url)}>
+                    Sign in
+                  </ButtonLink>
+                ) : (
+                  <Button data-retry="" onClick={refresh}>
+                    Try again
+                  </Button>
+                )}
+              </EmptyState.Actions>
+            )}
+          </EmptyState.Body>
+        </EmptyState.Root>
+      </Container>
+    </Layout.Main>
+  );
+}
+
 export function preloadDocumentScreen(screen: "editor" | "reader"): Promise<unknown> {
-  return screen === "editor" ? loadEditorScreen() : loadReaderScreen();
+  return screen === "editor" ? editorScreen.load() : readerScreen.load();
 }

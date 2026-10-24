@@ -410,6 +410,49 @@ test("read_document frames the body and slices line ranges", async () => {
   assert.match(invalid.content[0].text, /Invalid arguments for read_document/u);
 });
 
+test("search_passages renders sections with line ranges to read next", async () => {
+  const { dispatch, requests } = fakeWorkspace([
+    (request) =>
+      request.method === "GET" && request.path.startsWith("/api/search?")
+        ? Response.json({
+            passages: [
+              {
+                documentId: "doc_test",
+                endLine: 14,
+                headingPath: ["Storage", "Recovery"],
+                matchedBy: ["keyword", "semantic"],
+                revision: 7,
+                rfcNumber: 42,
+                score: 0.03,
+                snippet: "A checkpoint plus the journal tail recovers edits.",
+                startLine: 12,
+                title: "Storage",
+              },
+            ],
+            semantic: true,
+          })
+        : undefined,
+  ]);
+
+  const result = await callTool(dispatch, "search_passages", {
+    limit: 5,
+    query: "how is recovery done?",
+  });
+
+  assert.equal(requests[0]?.path, "/api/search?q=how%20is%20recovery%20done%3F&limit=5");
+  assert.match(result.content[0].text, /1\. RFC 0042 doc_test "Storage" › Storage › Recovery/u);
+  assert.match(
+    result.content[0].text,
+    /Lines 12-14 at revision 7; matched by keyword and semantic/u,
+  );
+  assert.match(result.content[0].text, /<passage>A checkpoint plus the journal tail/u);
+  assert.equal(result.structuredContent.passages[0].url, `${origin}/rfc/0042`);
+  assert.equal(result.structuredContent.semantic, true);
+
+  const missing = await callTool(dispatch, "search_passages", {});
+  assert.equal(missing.isError, true);
+});
+
 test("a key rejected during a tool call becomes an HTTP 401", async () => {
   const { dispatch } = fakeWorkspace([
     () =>

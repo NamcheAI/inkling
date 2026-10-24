@@ -5,6 +5,7 @@ import { Button, IconButton, InlineCode, KeyboardKey, Search } from "@earendil-w
 import type { CatalogResponse } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService } from "../api.ts";
+import { useCurrentUrl } from "../app-context.tsx";
 import { useEffectQuery } from "../effect-hooks.ts";
 import { formatRfcNumber, isEditableElement } from "../ui.ts";
 import styles from "./document-search.module.css";
@@ -38,12 +39,18 @@ export function DocumentSearch({
   publicCatalog = false,
 }: DocumentSearchProps): React.JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState(() => new URL(location.href).searchParams.get("q") ?? "");
+  const currentUrl = useCurrentUrl();
+  // The route loaded the catalog for the query in the URL, so start from it.
+  const [initialQuery] = useState(() => currentUrl.searchParams.get("q") ?? "");
+  const [query, setQuery] = useState(initialQuery);
   const [focused, setFocused] = useState(false);
   const deferredQuery = useDeferredValue(query);
+  const searchKey = (value: string): string =>
+    `document-search:${publicCatalog ? "public" : "workspace"}:${value}`;
   const search = useEffectQuery(
     publicCatalog ? api.listPublicDocuments(deferredQuery) : api.listDocuments(deferredQuery),
-    `document-search:${publicCatalog ? "public" : "workspace"}:${deferredQuery}`,
+    searchKey(deferredQuery),
+    { data: initialCatalog, key: searchKey(initialQuery) },
   );
   const inputId = useId();
   const panelId = `${inputId}-suggestions`;

@@ -37,6 +37,12 @@ Follow the template's [`README.md`](templates/cloudflare/README.md) to choose Wo
 configure Google OAuth, provision the buckets, and deploy. A Git repository is recommended for
 repeatable upgrades and Cloudflare Git deployments, but Wrangler only requires the folder.
 
+Deployments maintained in this repository live under [`deployments/`](deployments). Each one has the
+template's shape but depends on the workspace packages, so it deploys the current checkout. `make
+check` builds them and verifies that their Durable Object bindings, migrations, and asset routing
+match the template and the development Worker; see
+[`deployments/earendil-rfc`](deployments/earendil-rfc/README.md) for Earendil's RFC site.
+
 ## Cloudflare development
 
 The primary development setup runs Vite on port 5173 and the Cloudflare Worker on port 8787. Copy the example OAuth configuration first:
@@ -63,6 +69,8 @@ pnpm dev
 ```
 
 Open <http://localhost:5173>. Vite proxies API and WebSocket traffic to the Worker. Google authentication is mandatory in the Cloudflare runtime; it fails closed when OAuth is not configured.
+
+Deployed Inkling renders application pages on the server: the Worker (or the Node.js server) loads the page's data through its own API, renders the page with the frontend's server renderer, and embeds the data so the browser hydrates the page without fetching it again. The editor itself renders in the browser. Vite's development server serves the unrendered shell with hot reloading instead. To try server rendering locally, `pnpm dev` builds the frontend before starting the Worker; open <http://localhost:8787> after signing in on port 5173, and rebuild with `pnpm --filter @earendil-works/inkling-frontend run build` after frontend changes.
 
 `.dev.vars` is ignored by Git. Never commit OAuth client secrets or state-signing secrets.
 
@@ -159,6 +167,7 @@ Configure it with:
 
 - `PORT` — listening port, default `8787`.
 - `INKLING_DATA_DIR` — data directory, default `.inkling` in the current directory.
+- `INKLING_EMBEDDINGS_URL`, `INKLING_EMBEDDINGS_MODEL` — optional semantic search through an OpenAI-compatible embeddings API, for example `http://localhost:11434/v1` and `embeddinggemma` with a local [Ollama](https://ollama.com). Set `INKLING_EMBEDDINGS_API_KEY` for hosted providers.
 
 The CLI can also launch the local runtime:
 
@@ -201,6 +210,25 @@ pnpm --filter @earendil-works/inkling-runtime-cloudflare deploy
 ```
 
 The R2 bucket names and Durable Object bindings are declared in [`packages/runtime-cloudflare/wrangler.jsonc`](packages/runtime-cloudflare/wrangler.jsonc).
+
+## Search
+
+Inkling keeps a search index of every document's working draft and published revision, split into heading-scoped passages. It powers body matches in the document search, the public catalog search, `GET /api/search`, and the MCP `search_passages` tool, which points agents at sections and line ranges instead of whole documents. Every result is authorized against the catalog before it is returned.
+
+Keyword search uses SQLite FTS5 and needs no configuration: the Node.js runtime keeps it in `search.sqlite` in the data directory, and Cloudflare keeps it in the workspace Durable Object. The index is a projection; rebuild it from current document state with `inkling reindex WORKSPACE`, for example after deleting `search.sqlite`.
+
+Semantic search is optional. It embeds passages once they have been stable for a few seconds and blends vector matches with keyword matches. For Node.js, set the `INKLING_EMBEDDINGS_*` variables above. For Cloudflare, create a Vectorize index whose dimensions match the embedding model and bind it together with Workers AI:
+
+```sh
+pnpm exec wrangler vectorize create inkling-passages --dimensions=768 --metric=cosine
+```
+
+```jsonc
+"ai": { "binding": "AI" },
+"vectorize": [{ "binding": "INKLING_VECTORS", "index_name": "inkling-passages" }],
+```
+
+The default model is `@cf/baai/bge-base-en-v1.5` (768 dimensions); select another Workers AI embedding model with the `INKLING_EMBEDDING_MODEL` variable and a matching index. Workers AI and Vectorize bindings always run remotely, also under `wrangler dev`.
 
 ## Development checks
 

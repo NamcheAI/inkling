@@ -23,11 +23,6 @@ test(
     const directory = await mkdtemp(path.join(tmpdir(), "inkling-integration-"));
     try {
       const first = await withServer(directory, async (baseUrl, session) => {
-        const agentInstructions = await fetch(`${baseUrl}/AGENTS.md`);
-        assert.equal(agentInstructions.status, 200);
-        assert.match(agentInstructions.headers.get("content-type") ?? "", /^text\/markdown/u);
-        assert.ok((await agentInstructions.text()).includes(`base URL is ${baseUrl}`));
-
         const { cookieHeader, csrf } = session;
 
         const keyResponse = await fetch(`${baseUrl}/api/api-keys`, {
@@ -348,7 +343,7 @@ test(
         assert.match(unavailableRfc.headers.get("content-type") ?? "", /^text\/html/u);
         const unavailableHtml = await unavailableRfc.text();
         assert.ok(unavailableHtml.indexOf("INKLING AGENT HANDOFF") < 128);
-        assert.ok(unavailableHtml.indexOf("/AGENTS.md") < 256);
+        assert.ok(unavailableHtml.indexOf("/mcp") < 256);
         const publish = await fetch(`${baseUrl}/api/documents/${document.metadata.id}/publish`, {
           headers: authorization,
           method: "POST",
@@ -386,7 +381,7 @@ test(
         assert.doesNotMatch(publishedCsp, /style-src 'unsafe-inline'/u);
         const publishedHtml = await published.text();
         assert.ok(publishedHtml.indexOf("INKLING AGENT HANDOFF") < 128);
-        assert.ok(publishedHtml.indexOf("/AGENTS.md") < 256);
+        assert.ok(publishedHtml.indexOf("/mcp") < 256);
         assert.match(publishedHtml, /Integrated RFC/u);
         assert.match(publishedHtml, /<title>Integrated RFC<\/title>/u);
         assert.match(publishedHtml, /class="public-hero"/u);
@@ -598,6 +593,197 @@ test(
     }
   },
 );
+
+test("application pages render on the server with the reader's data", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "inkling-render-"));
+  try {
+    await withServer(directory, async (baseUrl, session) => {
+      const created = await fetch(`${baseUrl}/api/documents`, {
+        body: JSON.stringify({
+          body: "# Rendered on the server\n\nNo waiting for scripts.\n",
+          creationKey: "server-render",
+          title: "Rendered on the server",
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: session.cookieHeader,
+          Origin: baseUrl,
+          "X-CSRF-Token": session.csrf,
+        },
+        method: "POST",
+      });
+      assert.equal(created.status, 200);
+      const documentId = ((await created.json()) as { metadata: { id: string } }).metadata.id;
+
+      const workspace = await fetch(`${baseUrl}/`, { headers: { Cookie: session.cookieHeader } });
+      assert.equal(workspace.status, 200);
+      assert.equal(workspace.headers.get("Cache-Control"), "private, no-cache");
+      const workspaceHtml = await workspace.text();
+      assert.match(workspaceHtml, new RegExp(`data-catalog-document-id="${documentId}"`, "u"));
+      assert.match(workspaceHtml, /id="inkling-initial-route"/u);
+
+      const editor = await fetch(`${baseUrl}/documents/${documentId}/edit`, {
+        headers: { Cookie: session.cookieHeader },
+      });
+      const editorHtml = await editor.text();
+      assert.match(editorHtml, /<title>Rendered on the server<\/title>/u);
+      assert.match(editorHtml, /data-dgst="inkling-client-only"/u);
+
+      // Anonymous readers cannot load private documents, so they get the static shell.
+      const anonymous = await fetch(`${baseUrl}/documents/${documentId}`);
+      const anonymousHtml = await anonymous.text();
+      assert.match(anonymousHtml, /INKLING AGENT HANDOFF<\/h1>/u);
+      assert.doesNotMatch(anonymousHtml, /Rendered on the server|inkling-initial-route/u);
+
+      const entryScript = /<script type="module" crossorigin src="(\/assets\/[^"]+)"/u.exec(
+        workspaceHtml,
+      )?.[1];
+      assert.ok(entryScript);
+      const asset = await fetch(`${baseUrl}${entryScript}`);
+      assert.equal(asset.headers.get("Cache-Control"), "public, max-age=31536000, immutable");
+      await asset.arrayBuffer();
+    });
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("search indexes working passages and published revisions", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "inkling-search-"));
+  try {
+    await withServer(directory, async (baseUrl, session) => {
+      const authorization = await setupApiKey(baseUrl, "search", session);
+      const create = async (title: string, body: string): Promise<DocumentWire> => {
+        const response = await fetch(`${baseUrl}/api/documents`, {
+          body: JSON.stringify({ allocateRfc: false, body, creationKey: title, title }),
+          headers: { ...authorization, "Content-Type": "application/json" },
+          method: "POST",
+        });
+        assert.equal(response.status, 200);
+        return (await response.json()) as DocumentWire;
+      };
+      const search = async (query: string) => {
+        const response = await fetch(`${baseUrl}/api/search?q=${encodeURIComponent(query)}`, {
+          headers: authorization,
+        });
+        assert.equal(response.status, 200);
+        return (
+          (await response.json()) as {
+            passages: readonly {
+              documentId: string;
+              endLine: number;
+              headingPath: readonly string[];
+              matchedBy: readonly string[];
+              startLine: number;
+              title: string;
+            }[];
+            semantic: boolean;
+          }
+        ).passages;
+      };
+
+      const retries = await create(
+        "Retry policy",
+        "Overview of client behavior.\n\n## Backoff\n\nRetries use exponential backoff with jitter.\n\n## Limits\n\nAt most five attempts.",
+      );
+      const caching = await create("Caching", "Caches never retry failed origin fetches.");
+
+      const passages = await search("backoff");
+      assert.equal(passages.length, 1);
+      assert.equal(passages[0]?.documentId, retries.metadata.id);
+      assert.deepEqual(passages[0]?.headingPath, ["Retry policy", "Backoff"]);
+      assert.deepEqual(passages[0]?.matchedBy, ["keyword"]);
+      const lines = (await readDocument(baseUrl, retries.metadata.id, authorization)).body
+        .split("\n")
+        .slice((passages[0]?.startLine ?? 1) - 1, passages[0]?.endLine)
+        .join("\n");
+      assert.match(lines, /## Backoff\n\nRetries use exponential backoff with jitter\./u);
+      assert.deepEqual(
+        [...new Set((await search("retr")).map((passage) => passage.documentId))].toSorted(),
+        [retries.metadata.id, caching.metadata.id].toSorted(),
+      );
+      assert.deepEqual(await search("backoff -jitter"), []);
+      assert.deepEqual(await search("backoff label:unrelated"), []);
+      const filtersOnly = await fetch(`${baseUrl}/api/search?q=${encodeURIComponent("is:note")}`, {
+        headers: authorization,
+      });
+      assert.equal(filtersOnly.status, 400);
+      const anonymous = await fetch(`${baseUrl}/api/search?q=backoff`);
+      assert.equal(anonymous.status, 403);
+
+      const catalog = await fetch(`${baseUrl}/api/documents?q=${encodeURIComponent("jitter")}`, {
+        headers: authorization,
+      });
+      const listed = (await catalog.json()) as {
+        documents: readonly { excerpt: string; metadata: { id: string } }[];
+      };
+      assert.deepEqual(
+        listed.documents.map((document) => document.metadata.id),
+        [retries.metadata.id],
+      );
+      assert.match(listed.documents[0]?.excerpt ?? "", /exponential backoff with jitter/u);
+
+      const visibility = await fetch(`${baseUrl}/api/documents/${retries.metadata.id}/edits`, {
+        body: JSON.stringify({
+          edits: [{ newText: "visibility: public", oldText: "visibility: private" }],
+          expectedRevision: retries.metadata.headRevision,
+        }),
+        headers: { ...authorization, "Content-Type": "application/json" },
+        method: "POST",
+      });
+      assert.equal(visibility.status, 200);
+      const publish = await fetch(`${baseUrl}/api/documents/${retries.metadata.id}/publish`, {
+        headers: authorization,
+        method: "POST",
+      });
+      assert.equal(publish.status, 200);
+      const published = (await publish.json()) as DocumentWire["metadata"];
+      const draft = await fetch(`${baseUrl}/api/documents/${retries.metadata.id}/edits`, {
+        body: JSON.stringify({
+          edits: [{ newText: "decorrelated delays", oldText: "exponential backoff with jitter" }],
+          expectedRevision: published.headRevision,
+        }),
+        headers: { ...authorization, "Content-Type": "application/json" },
+        method: "POST",
+      });
+      assert.equal(draft.status, 200);
+      const publicSearch = async (query: string) =>
+        (
+          (await (
+            await fetch(`${baseUrl}/api/public/documents?q=${encodeURIComponent(query)}`)
+          ).json()) as { documents: readonly { metadata: { id: string } }[] }
+        ).documents.map((document) => document.metadata.id);
+      assert.deepEqual(await publicSearch("exponential backoff"), [retries.metadata.id]);
+      assert.deepEqual(await publicSearch("decorrelated"), []);
+      assert.deepEqual(
+        (await search("decorrelated")).map((passage) => passage.documentId),
+        [retries.metadata.id],
+      );
+      assert.deepEqual(await search("exponential"), []);
+
+      const rebuild = await fetch(`${baseUrl}/api/admin/search/rebuild`, {
+        headers: authorization,
+        method: "POST",
+      });
+      assert.equal(rebuild.status, 200);
+      assert.deepEqual(await rebuild.json(), { errors: [], indexedDocuments: 2 });
+      assert.equal((await search("decorrelated")).length, 1);
+      assert.deepEqual(await publicSearch("exponential backoff"), [retries.metadata.id]);
+
+      const deleted = await fetch(
+        `${baseUrl}/api/documents/${caching.metadata.id}?expectedRevision=${caching.metadata.headRevision}`,
+        { headers: authorization, method: "DELETE" },
+      );
+      assert.equal(deleted.status, 200);
+      assert.deepEqual(
+        [...new Set((await search("retr")).map((passage) => passage.documentId))],
+        [retries.metadata.id],
+      );
+    });
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
 
 test("document history is available over HTTP and restores forward", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "inkling-history-"));
@@ -965,6 +1151,15 @@ test("backup corruption is rejected and a fresh installation restores portably",
         method: "POST",
       });
       assert.equal(restored.status, 200);
+      const restoredSearch = await fetch(`${baseUrl}/api/search?q=portable`, {
+        headers: source.authorization,
+      });
+      assert.deepEqual(
+        ((await restoredSearch.json()) as { passages: { documentId: string }[] }).passages.map(
+          (passage) => passage.documentId,
+        ),
+        [source.documentId],
+      );
       const document = await readDocument(baseUrl, source.documentId, source.authorization);
       assert.match(document.body, /---\n\n# Portable recovery\n\nPortable recovery body$/u);
       const verification = await fetch(`${baseUrl}/api/admin/verify`, {
@@ -1073,6 +1268,17 @@ test("agents read and write documents over MCP", { timeout: 30_000 }, async () =
         edits: [{ new_text: "is partitioned per tenant", old_text: "is shared between workers" }],
       });
       assert.match(edited.content[0]?.text ?? "", /Applied 1 edit/u);
+
+      const passages = await call("search_passages", { query: "partitioned tenant" });
+      assert.equal(passages.structuredContent.passages[0]?.documentId, documentId);
+      assert.equal(passages.structuredContent.passages[0]?.url, `${baseUrl}${rfcPath}`);
+      assert.match(passages.content[0]?.text ?? "", /Cache design/u);
+      const passageLines = await call("read_document", {
+        document: documentId,
+        end_line: passages.structuredContent.passages[0]?.endLine,
+        start_line: passages.structuredContent.passages[0]?.startLine,
+      });
+      assert.match(passageLines.structuredContent.body, /partitioned per tenant/u);
 
       const commented = await call("add_comment", {
         body: "Which partition key?",

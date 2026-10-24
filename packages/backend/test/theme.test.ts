@@ -14,6 +14,7 @@ import {
   paperTheme,
   themeContentSecurityPolicy,
   themeStylesheet,
+  withThemeFontSources,
 } from "../src/index.ts";
 
 test("the bundled themes define validated light, dark, font, syntax, and diagram values", async () => {
@@ -182,4 +183,22 @@ test("a theme's selection colors apply only when the theme sets them", () => {
   assert.match(stylesheet, /--selection-background: oklch\(40% 0\.1 60\);/u);
   assert.match(stylesheet, /::selection \{\n {2}color: var\(--selection-text, currentColor\);/u);
   assert.doesNotMatch(themeStylesheet(inklingTheme), /--selection-|::selection/u);
+});
+
+test("pages with their own policy take the theme's font origins", () => {
+  const response = new Response("", {
+    headers: {
+      "Content-Security-Policy":
+        "default-src 'none'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; form-action 'self'",
+    },
+  });
+  const selfHosted = {
+    ...inklingTheme,
+    fonts: { ...inklingTheme.fonts, imports: ["https://fonts.example.com/sans.css"] },
+  };
+
+  assert.equal(
+    withThemeFontSources(response, selfHosted).headers.get("Content-Security-Policy"),
+    "default-src 'none'; style-src 'self' https://fonts.example.com; font-src 'self' https://fonts.example.com; form-action 'self'",
+  );
 });

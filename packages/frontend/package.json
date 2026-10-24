@@ -2,17 +2,34 @@
   "name": "@earendil-works/inkling-frontend",
   "version": "0.0.1",
   "description": "Browser application assets for Inkling.",
+  "files": [
+    "dist",
+    "dist-server"
+  ],
   "type": "module",
   "exports": {
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./server": {
+      "types": "./src/server-contract.ts",
+      "default": "./dist-server/server.js"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      "./package.json": "./package.json",
+      "./server": {
+        "types": "./dist-server/server.d.ts",
+        "default": "./dist-server/server.js"
+      }
+    }
   },
   "scripts": {
-    "build": "vite build",
-    "build:package": "vite build",
+    "build": "vite build && vite build --ssr",
+    "build:package": "vite build && vite build --ssr",
     "dev": "vite",
     "preview": "vite preview",
     "prepublishOnly": "echo 'Publish from the repository root with pnpm release' >&2 && exit 1",
-    "test": "vite build && node --test test/*.test.ts",
+    "test": "vite build && vite build --ssr && node --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

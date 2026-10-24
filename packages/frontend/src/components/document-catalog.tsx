@@ -17,16 +17,17 @@ export function DocumentCatalog({
   catalog,
   publicCatalog = false,
 }: DocumentCatalogProps): React.JSX.Element {
-  const selectedDocumentRef = useRef<string | undefined>(undefined);
+  // The anchor is where j/k continues from; the marker is only shown after keyboard navigation.
+  const selectionAnchorRef = useRef<string | undefined>(undefined);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string>();
-  const selectDocument = useCallback((documentId: string, scroll: boolean): void => {
-    selectedDocumentRef.current = documentId;
+  const selectedDocumentIdRef = useRef<string | undefined>(undefined);
+  const selectDocument = useCallback((documentId: string | undefined, scroll: boolean): void => {
+    selectionAnchorRef.current = documentId;
+    selectedDocumentIdRef.current = documentId;
     setSelectedDocumentId(documentId);
-    if (!scroll) return;
+    if (!scroll || documentId === undefined) return;
     requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLElement>(`[data-catalog-document-id="${CSS.escape(documentId)}"]`)
-        ?.scrollIntoView({ block: "nearest" });
+      catalogRow(documentId)?.scrollIntoView({ block: "nearest" });
     });
   }, []);
   const moveSelection = useCallback(
@@ -34,7 +35,7 @@ export function DocumentCatalog({
       const documents = catalog.documents;
       if (documents.length === 0) return;
       const currentIndex = documents.findIndex(
-        (document) => document.metadata.id === selectedDocumentRef.current,
+        (document) => document.metadata.id === selectionAnchorRef.current,
       );
       const nextIndex =
         currentIndex === -1
@@ -48,16 +49,22 @@ export function DocumentCatalog({
     [catalog.documents, selectDocument],
   );
 
+  const resultKey = catalog.documents.map((document) => document.metadata.id).join("\n");
   useEffect(() => {
-    const selected = selectedDocumentRef.current;
-    if (
-      selected !== undefined &&
-      !catalog.documents.some((document) => document.metadata.id === selected)
-    ) {
-      selectedDocumentRef.current = undefined;
-      setSelectedDocumentId(undefined);
-    }
-  }, [catalog.documents]);
+    // Different results start a fresh selection so Enter never opens a stale choice.
+    selectDocument(undefined, false);
+  }, [resultKey, selectDocument]);
+
+  useEffect(() => {
+    // Editing the query starts a new search, so Enter should submit it rather than open a row.
+    const handleSearchInput = (event: Event): void => {
+      if (event.target instanceof HTMLElement && event.target.matches("[data-search]")) {
+        selectDocument(undefined, false);
+      }
+    };
+    document.addEventListener("input", handleSearchInput);
+    return () => document.removeEventListener("input", handleSearchInput);
+  }, [selectDocument]);
 
   useEffect(() => {
     const handleKeyboardSelection = (event: KeyboardEvent): void => {
@@ -70,6 +77,20 @@ export function DocumentCatalog({
         return;
       }
       const editable = isEditableElement(target);
+      const searchInput = target instanceof HTMLElement && target.matches("[data-search]");
+      if (event.key === "Enter" || event.key === "Escape") {
+        const selected = selectedDocumentIdRef.current;
+        // Only act for the page itself or the search field; other controls own their keys.
+        if (selected === undefined || !(searchInput || isPageTarget(target))) return;
+        if (event.key === "Escape") {
+          selectDocument(undefined, false);
+          return;
+        }
+        if (event.shiftKey) return;
+        event.preventDefault();
+        catalogRow(selected)?.click();
+        return;
+      }
       const key = event.key.toLowerCase();
       const direction =
         event.key === "ArrowDown" || (key === "j" && !editable)
@@ -78,13 +99,13 @@ export function DocumentCatalog({
             ? -1
             : undefined;
       if (direction === undefined) return;
-      if (editable && !(target instanceof HTMLElement && target.matches("[data-search]"))) return;
+      if (editable && !searchInput) return;
       event.preventDefault();
       moveSelection(direction);
     };
     document.addEventListener("keydown", handleKeyboardSelection);
     return () => document.removeEventListener("keydown", handleKeyboardSelection);
-  }, [catalog.documents.length, moveSelection]);
+  }, [catalog.documents.length, moveSelection, selectDocument]);
 
   if (catalog.documents.length === 0) {
     return (
@@ -109,11 +130,23 @@ export function DocumentCatalog({
         <DocumentCatalogRow
           document={document}
           key={document.metadata.id}
-          onSelect={() => selectDocument(document.metadata.id, false)}
+          onFocus={() => {
+            selectionAnchorRef.current = document.metadata.id;
+          }}
           publicDocument={publicCatalog}
           selected={document.metadata.id === selectedDocumentId}
         />
       ))}
     </section>
   );
+}
+
+function catalogRow(documentId: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    `[data-catalog-document-id="${CSS.escape(documentId)}"]`,
+  );
+}
+
+function isPageTarget(target: EventTarget | null): boolean {
+  return target === null || target === document.body || target === document.documentElement;
 }

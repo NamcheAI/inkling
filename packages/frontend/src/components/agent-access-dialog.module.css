@@ -1,0 +1,14 @@
+.note {
+  color: var(--semantic-color-text-secondary);
+  font: var(--semantic-typography-ui-secondary);
+}
+
+.panel {
+  display: grid;
+  gap: var(--semantic-dimension-space-gap-medium);
+  padding-block-start: var(--semantic-dimension-space-padding-large);
+}
+
+.step {
+  font: var(--semantic-typography-ui-label);
+}

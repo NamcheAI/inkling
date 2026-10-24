@@ -26,13 +26,16 @@ test("the application shell keeps agent instructions in visible body text", asyn
 
   assert.match(visibleText, /INKLING AGENT HANDOFF/u);
   assert.match(visibleText, /do not summarize this application shell/u);
-  assert.match(visibleText, /\/AGENTS\.md/u);
+  assert.match(visibleText, /\/mcp/u);
+  assert.match(visibleText, /Agent access/u);
+  assert.doesNotMatch(html, /AGENTS\.md/u);
   assert.match(visibleText, /read_document/u);
 });
 
 test(
   "browser pages read, collaborate, comment, preview, and honor share revocation",
-  { skip: browserExecutable === undefined, timeout: 60_000 },
+  // One long end-to-end session: about 25 seconds locally, but GitHub runners take twice that.
+  { skip: browserExecutable === undefined, timeout: 180_000 },
   async () => {
     assert.ok(browserExecutable);
     const directory = await mkdtemp(path.join(tmpdir(), "inkling-browser-"));
@@ -94,19 +97,34 @@ test(
       await first.locator("[data-account-menu]").waitFor();
       assert.deepEqual(
         await first.locator('[data-account-menu] [role="menuitem"]').allTextContents(),
-        ["API keys", "Sign out"],
+        ["Agent access", "API keys", "Sign out"],
       );
-      await first.locator("[data-open-api-keys]").click();
+      await first.locator("[data-open-agent-access]").click();
+      assert.equal(
+        await first.locator("[data-agent-access-dialog] h2").textContent(),
+        "Agent access",
+      );
+      assert.deepEqual(await first.getByRole("tab").allTextContents(), [
+        "Pi",
+        "Claude Code",
+        "Codex",
+      ]);
+      assert.deepEqual(
+        await first.locator("[data-agent-setup='pi'] [data-agent-command]").allTextContents(),
+        [`pi mcp add inkling --url ${baseUrl}/mcp`, "pi mcp login inkling"],
+      );
+      await first.getByRole("tab", { name: "Codex" }).click();
+      assert.deepEqual(
+        await first.locator("[data-agent-setup='codex'] [data-agent-command]").allTextContents(),
+        [`codex mcp add inkling --url ${baseUrl}/mcp`, "codex mcp login inkling"],
+      );
+      await first.locator("[data-agent-access-api-keys]").click();
+      assert.equal(await first.locator("[data-agent-access-dialog]").count(), 0);
       assert.equal(await first.locator("[data-settings-dialog] [data-dialog-eyebrow]").count(), 0);
       assert.equal(await first.locator("[data-settings-dialog] h2").textContent(), "API keys");
       assert.match(
         (await first.locator("[data-settings-note]").textContent()) ?? "",
-        /Reuse an active key/u,
-      );
-      assert.ok(
-        ((await first.locator("[data-mcp-endpoint]").textContent()) ?? "").includes(
-          `${baseUrl}/mcp`,
-        ),
+        /act with your permissions/u,
       );
       await first.getByLabel("Key name").fill("Browser agent");
       await first.getByRole("button", { name: "Create API key" }).click();
@@ -210,7 +228,7 @@ test(
       assert.ok(documentId);
       assert.match(documentId, /^doc_[0-9A-Za-z]+$/u);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       assert.equal(await first.title(), "Browser collaboration");
       assert.deepEqual(await first.locator("[data-breadcrumb]").allTextContents(), [
@@ -249,7 +267,7 @@ test(
       await first.keyboard.insertText("# Browser collaboration");
       await first.waitForFunction(() => document.title === "Browser collaboration");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       assert.equal(await first.locator("[data-api-status]").textContent(), "Saved");
       await titleLine.click();
@@ -263,7 +281,7 @@ test(
         () => document.querySelector("[data-preview]")?.textContent === "",
       );
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       assert.match(
         await first.locator(".cm-content").innerText(),
@@ -274,7 +292,7 @@ test(
       await first.keyboard.press("ControlOrMeta+End");
       await first.keyboard.insertText("\n\nHistory highlight target");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       const historyTargetLine = first.locator(".cm-line", {
         hasText: "History highlight target",
@@ -284,7 +302,7 @@ test(
       await first.keyboard.press("Shift+Home");
       await first.keyboard.insertText("History restore marker");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.locator("[data-history-toggle]").click();
       await first.waitForSelector("[data-history-dropdown]");
@@ -349,7 +367,7 @@ test(
             ?.textContent?.includes("History restore marker"),
       );
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       const restoredHistoryTarget = first.locator(".cm-line", {
         hasText: "History highlight target",
@@ -365,7 +383,7 @@ test(
             ?.textContent?.includes("History highlight target"),
       );
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
 
       const draftStateChip = first.locator("[data-preview-scroller] [data-lifecycle-state]");
@@ -443,15 +461,18 @@ test(
           .textContent(),
         "platform",
       );
-      await first.waitForFunction(async () => {
-        const response = await fetch(`/api/documents?q=${encodeURIComponent("label:platform")}`);
-        const catalog = (await response.json()) as {
-          documents: readonly { metadata: { title: string } }[];
-        };
-        return catalog.documents.some(
-          (document) => document.metadata.title === "Browser collaboration",
-        );
-      });
+      // Typed edits reach the catalog through a throttled projection.
+      await waitUntil(() =>
+        first.evaluate(async () => {
+          const response = await fetch(`/api/documents?q=${encodeURIComponent("label:platform")}`);
+          const catalog = (await response.json()) as {
+            documents: readonly { metadata: { title: string } }[];
+          };
+          return catalog.documents.some(
+            (document) => document.metadata.title === "Browser collaboration",
+          );
+        }),
+      );
       await first.getByRole("link", { name: "Inkling home" }).click();
       await first.waitForSelector("[data-document-search]");
       assert.equal(await first.title(), "Inkling");
@@ -493,7 +514,7 @@ test(
       assert.doesNotMatch(await first.locator("[data-reader]").innerText(), /architecture/u);
       await first.locator("[data-open-editor]").click();
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.locator(".cm-content").click();
       await first.keyboard.press("ControlOrMeta+End");
@@ -510,7 +531,7 @@ test(
       );
       assert.equal(await first.locator('body > div[id^="dinkling-mermaid-"]').count(), 0);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       const editorKeyword = first.locator(".cm-content .tok-keyword").last();
       assert.equal(await editorKeyword.textContent(), "const");
@@ -521,7 +542,7 @@ test(
       await first.keyboard.press("Shift+Home");
       await first.keyboard.insertText("visibility: publi");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.waitForFunction(
         () => document.querySelector("[data-publish]")?.textContent === "Fix frontmatter",
@@ -542,7 +563,7 @@ test(
       await first.locator("[data-publish]").click();
       assert.equal((await publication).status(), 200);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.waitForFunction(
         () => document.querySelector("[data-publish]")?.textContent === "Publish",
@@ -551,7 +572,7 @@ test(
       await first.keyboard.press("ControlOrMeta+End");
       await first.keyboard.insertText("\n\nPublished follow-up");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.waitForFunction(
         () => document.querySelector("[data-publish]")?.textContent === "Publish Changes",
@@ -570,7 +591,7 @@ test(
       assert.doesNotMatch(await first.locator("[data-reader]").innerText(), /Published follow-up/u);
       await first.locator("[data-open-editor]").click();
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       const changedPublication = first.waitForResponse(
         (response) => response.request().method() === "POST" && response.url().endsWith("/publish"),
@@ -618,6 +639,54 @@ test(
       );
       assert.equal(await architectureTocLink.getAttribute("aria-current"), null);
       assert.equal(await deliveryTocLink.getAttribute("aria-current"), "location");
+      // Jumping between sections only moves the fragment; it must not reload the route.
+      const fragmentRequests: string[] = [];
+      const recordFragmentRequest = (request: { url: () => string }): void => {
+        if (new URL(request.url()).pathname.startsWith("/api/")) {
+          fragmentRequests.push(request.url());
+        }
+      };
+      first.on("request", recordFragmentRequest);
+      await deliveryTocLink.click();
+      await first.waitForURL(/#delivery$/u);
+      await architectureTocLink.click();
+      await first.waitForURL(/#architecture$/u);
+      await first.waitForFunction(
+        () =>
+          document.querySelector('a[href="#architecture"]')?.getAttribute("aria-current") ===
+          "location",
+      );
+      await first.goBack();
+      await first.waitForURL(/#delivery$/u);
+      first.off("request", recordFragmentRequest);
+      assert.deepEqual(fragmentRequests, []);
+      // Narrow pages collapse the table of contents into a menu. Opening it while scrolled moves
+      // focus into the list, which must not scroll the page and close the menu again.
+      await first.setViewportSize({ height: 400, width: 800 });
+      const readerMenuTrigger = first.locator("[data-reader-toc] button");
+      await readerMenuTrigger.waitFor();
+      const nextFrames = (): Promise<unknown> =>
+        first.evaluate(
+          () =>
+            new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+        );
+      await first.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await nextFrames();
+      const scrolledTo = await first.evaluate(() => window.scrollY);
+      assert.ok(scrolledTo > 0);
+      // Click where the stuck bar is; Playwright's own scrolling into view would close the menu.
+      const triggerBox = await readerMenuTrigger.boundingBox();
+      assert.ok(triggerBox);
+      await first.mouse.click(triggerBox.x + 20, triggerBox.y + triggerBox.height / 2);
+      await first.waitForFunction(
+        () => document.activeElement?.closest('[role="dialog"]') instanceof HTMLElement,
+      );
+      await nextFrames();
+      assert.equal(await first.evaluate(() => window.scrollY), scrolledTo);
+      assert.equal(await readerMenuTrigger.getAttribute("aria-expanded"), "true");
+      await first.getByRole("dialog").getByRole("link", { name: "Architecture" }).click();
+      await first.waitForURL(/#architecture$/u);
+      await first.setViewportSize({ height: 720, width: 1280 });
       await first.evaluate(() => window.scrollTo(0, 0));
       assert.equal(await first.locator("[data-api-status]").count(), 0);
       assert.equal(await first.locator(".cm-editor").count(), 0);
@@ -667,11 +736,16 @@ test(
         );
       await first.waitForURL(/\/documents\/[^/]+\/edit$/u);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.getByRole("link", { name: "Inkling home" }).click();
       await first.waitForSelector("[data-document-search]");
       assert.equal(await first.locator("[data-catalog-document-id]").count(), 2);
+      await first.locator("[data-catalog-document-id]").first().hover();
+      assert.equal(
+        await first.locator("[data-catalog-document-id][data-catalog-selected]").count(),
+        0,
+      );
       await first.keyboard.press("j");
       const firstKeyboardSelection = await first
         .locator("[data-catalog-document-id][data-catalog-selected]")
@@ -772,13 +846,11 @@ test(
         1,
       );
       await documentSearch.press("Enter");
-      assert.match(first.url(), /\?q=rfc%3A1(?:\+|%20)%22answer%22$/u);
-      await first.locator("[data-catalog-document-id][data-catalog-selected]").click();
       await first.waitForURL(/\/rfc\/0001$/u);
       await first.locator("[data-open-editor]").click();
       await first.waitForURL(/\/rfc\/0001\/edit$/u);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       assert.equal(await first.locator("[data-api-status]").textContent(), "Saved");
       assert.equal(
@@ -1334,7 +1406,7 @@ test(
       });
       await first.goto(`${baseUrl}/documents/${wrappedDocumentId}/edit`);
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.evaluate(async () => {
         const source = document.querySelector<HTMLElement>(".cm-scroller");
@@ -1489,7 +1561,7 @@ test(
       await first.keyboard.press("End");
       await first.keyboard.insertText(" It remains editable.");
       await first.waitForFunction(
-        () => document.querySelector("[data-save-state]")?.textContent === "Saved",
+        () => document.querySelector('[data-save-state="ready"]') !== null,
       );
       await first.getByRole("link", { name: "In Trash", exact: true }).click();
       await first.waitForURL(`${baseUrl}/trash`);
@@ -1719,4 +1791,12 @@ async function waitForServer(baseUrl: string, attempt = 0): Promise<void> {
   if (attempt >= 99) assert.fail("The browser test server did not start.");
   await new Promise((resolve) => setTimeout(resolve, 50));
   return waitForServer(baseUrl, attempt + 1);
+}
+
+/** Polls a condition that needs Node-side awaiting, such as a fetch made in the page. */
+async function waitUntil(condition: () => Promise<boolean>, attempt = 0): Promise<void> {
+  if (await condition()) return;
+  if (attempt >= 199) assert.fail("The awaited condition never held.");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return waitUntil(condition, attempt + 1);
 }

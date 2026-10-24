@@ -647,19 +647,52 @@ function shapeVariables(theme: ThemeConfiguration): readonly string[] {
 // Public pages allow stylesheets and fonts only from the theme's font imports;
 // Elanor's own fonts are served from this origin.
 export function themeContentSecurityPolicy(theme: ThemeConfiguration | undefined): string {
-  const styleOrigins = [...new Set((theme?.fonts.imports ?? []).map((url) => new URL(url).origin))];
-  const fontOrigins = [...new Set(styleOrigins.map((origin) => fontFileOrigins[origin] ?? origin))];
+  const { fontSrc, styleSrc } = themeFontDirectives(theme);
   return [
     "default-src 'none'",
     "img-src 'self' https: data:",
-    ["style-src 'self'", ...styleOrigins].join(" "),
+    styleSrc,
     "script-src 'self'",
     "connect-src 'self'",
-    ["font-src 'self'", ...fontOrigins].join(" "),
+    fontSrc,
     "base-uri 'none'",
     "frame-ancestors 'none'",
   ].join("; ");
 }
+
+/**
+ * Rewrites a page's style-src and font-src to the theme's font origins, for
+ * pages that set their own policy (the OAuth consent page) but load the theme.
+ */
+export function withThemeFontSources(
+  response: Response,
+  theme: ThemeConfiguration | undefined,
+): Response {
+  const policy = response.headers.get("Content-Security-Policy");
+  if (policy === null) return response;
+  const { fontSrc, styleSrc } = themeFontDirectives(theme);
+  response.headers.set(
+    "Content-Security-Policy",
+    policy.replace(/style-src [^;]*/u, styleSrc).replace(/font-src [^;]*/u, fontSrc),
+  );
+  return response;
+}
+
+function themeFontDirectives(theme: ThemeConfiguration | undefined): {
+  readonly fontSrc: string;
+  readonly styleSrc: string;
+} {
+  const styleOrigins = [...new Set((theme?.fonts.imports ?? []).map((url) => new URL(url).origin))];
+  const fontOrigins = [...new Set(styleOrigins.map((origin) => fontFileOrigins[origin] ?? origin))];
+  return {
+    fontSrc: ["font-src 'self'", ...fontOrigins].join(" "),
+    styleSrc: ["style-src 'self'", ...styleOrigins].join(" "),
+  };
+}
+
+// Hidden unless the theme supplies a logo (see --brand-logo-display above).
+export const publicBrandMarkHtml =
+  '<span class="public-brand-logo" aria-hidden="true"></span><span class="public-brand-separator" aria-hidden="true"></span>';
 
 export function themeCssResponse(theme: ThemeConfiguration | undefined): Response {
   return new Response(themeStylesheet(theme), {

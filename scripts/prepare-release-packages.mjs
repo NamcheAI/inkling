@@ -20,18 +20,23 @@ await Promise.all(packages.map(preparePackage));
 async function preparePackage(releasePackage) {
   const { directory, manifest, shortName } = releasePackage;
   const outputDirectory = path.join(releaseDirectory, shortName);
-  const distDirectory = path.join(directory, "dist");
+  const files = manifest.files ?? ["dist"];
   await mkdir(outputDirectory, { recursive: true });
-  await cp(distDirectory, path.join(outputDirectory, "dist"), { recursive: true });
+  await Promise.all(
+    files.map((file) =>
+      cp(path.join(directory, file), path.join(outputDirectory, file), { recursive: true }),
+    ),
+  );
 
   const publishedManifest = compact({
     name: manifest.name,
     version: manifest.version,
     description: manifest.description,
     type: manifest.type,
-    exports: releaseExports(manifest.exports),
+    // A package whose exports are built artifacts declares them in publishConfig.
+    exports: manifest.publishConfig?.exports ?? releaseExports(manifest.exports),
     bin: releaseBin(manifest.bin),
-    files: ["dist"],
+    files,
     engines: manifest.engines ?? { node: rootManifest.engines.node },
     dependencies: releaseDependencies(manifest.dependencies),
     optionalDependencies: releaseDependencies(manifest.optionalDependencies),

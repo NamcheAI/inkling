@@ -152,12 +152,43 @@ export function apiClientLayer(capabilityToken?: string): Layer.Layer<ApiClientS
   return Layer.succeed(ApiClient, makeApiClient(capabilityToken));
 }
 
-export function makeApiClient(capabilityToken?: string): ApiClientService {
+/**
+ * Remembers authentication statuses between route loads in one page, per
+ * capability token, so navigating does not ask again each time. Signing
+ * out, or any request refused with 401, forgets them.
+ */
+export interface AuthenticationCache {
+  readonly forget: () => void;
+  readonly get: (key: string) => AuthenticationStatus | undefined;
+  readonly set: (key: string, status: AuthenticationStatus) => void;
+}
+
+export function makeAuthenticationCache(): AuthenticationCache {
+  const statuses = new Map<string, AuthenticationStatus>();
+  return {
+    forget: () => statuses.clear(),
+    get: (key) => statuses.get(key),
+    set: (key, status) => {
+      statuses.set(key, status);
+    },
+  };
+}
+
+/** Sends an API request for a same-origin path; `fetch` in the browser. */
+export type ApiTransport = (path: string, init: RequestInit) => Promise<Response>;
+
+export function makeApiClient(
+  capabilityToken?: string,
+  transport: ApiTransport = (path, init) => fetch(path, init),
+  authentication?: AuthenticationCache,
+): ApiClientService {
+  const authenticationKey = capabilityToken ?? "";
   const withCapability = (url: string): string => {
     if (capabilityToken === undefined) {
       return url;
     }
-    const parsed = new URL(url, location.origin);
+    // Only the path and query are used, so any base works.
+    const parsed = new URL(url, "http://inkling.invalid");
     parsed.searchParams.set("cap", capabilityToken);
     return `${parsed.pathname}${parsed.search}`;
   };
@@ -166,9 +197,8 @@ export function makeApiClient(capabilityToken?: string): ApiClientService {
     url: string,
     schema: Schema.Schema<A, I>,
     init?: RequestInit,
-  ): Effect.Effect<A, ApiError> => {
-    const currentCsrf = csrfToken();
-    return Effect.tryPromise({
+  ): Effect.Effect<A, ApiError> =>
+    Effect.tryPromise({
       catch: (cause) =>
         new ApiError({
           cause,
@@ -177,8 +207,9 @@ export function makeApiClient(capabilityToken?: string): ApiClientService {
           retryable: true,
           status: 0,
         }),
-      try: () =>
-        fetch(withCapability(url), {
+      try: () => {
+        const currentCsrf = init?.method === undefined ? undefined : csrfToken();
+        return transport(withCapability(url), {
           ...init,
           headers: {
             Accept: "application/json",
@@ -186,7 +217,8 @@ export function makeApiClient(capabilityToken?: string): ApiClientService {
             ...(currentCsrf === undefined ? {} : { "X-CSRF-Token": currentCsrf }),
             ...init?.headers,
           },
-        }),
+        });
+      },
     }).pipe(
       Effect.flatMap((response) =>
         Effect.tryPromise({
@@ -240,8 +272,11 @@ export function makeApiClient(capabilityToken?: string): ApiClientService {
           ),
         ),
       ),
+      // A refused request means a remembered status may be stale.
+      Effect.tapError((error) =>
+        error.status === 401 ? Effect.sync(() => authentication?.forget()) : Effect.void,
+      ),
     );
-  };
 
   const mutation = <A, I>(
     url: string,
@@ -261,7 +296,16 @@ export function makeApiClient(capabilityToken?: string): ApiClientService {
         DocumentMetadataSchema,
         "POST",
       ),
-    authenticationStatus: request("/api/auth/status", AuthenticationStatusSchema),
+    authenticationStatus: Effect.suspend(() => {
+      const cached = authentication?.get(authenticationKey);
+      return cached === undefined
+        ? request("/api/auth/status", AuthenticationStatusSchema).pipe(
+            Effect.tap((status) =>
+              Effect.sync(() => authentication?.set(authenticationKey, status)),
+            ),
+          )
+        : Effect.succeed(cached);
+    }),
     createApiKey: (label) => mutation("/api/api-keys", ApiKeyCreatedSchema, "POST", { label }),
     createDocument: (input) => mutation("/api/documents", DocumentResponseSchema, "POST", input),
     createThread: (documentId, anchor, body, authorDisplayName) =>
@@ -317,7 +361,10 @@ export function makeApiClient(capabilityToken?: string): ApiClientService {
       request(`/api/documents?q=${encodeURIComponent(query)}`, CatalogResponseSchema),
     listPublicDocuments: (query = "") =>
       request(`/api/public/documents?q=${encodeURIComponent(query)}`, CatalogResponseSchema),
-    logout: mutation("/api/auth/logout", Schema.Unknown, "POST").pipe(Effect.asVoid),
+    logout: mutation("/api/auth/logout", Schema.Unknown, "POST").pipe(
+      Effect.ensuring(Effect.sync(() => authentication?.forget())),
+      Effect.asVoid,
+    ),
     publish: (documentId) =>
       mutation(
         `/api/documents/${encodeURIComponent(documentId)}/publish`,

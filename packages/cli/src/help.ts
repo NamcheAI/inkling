@@ -43,6 +43,7 @@ const helpTopics: Readonly<Record<string, HelpTopic>> = {
       ["import-rfc / import-jot", "Import legacy documents."],
       ["backup / restore", "Export or restore a workspace backup."],
       ["verify / repair", "Verify storage or rebuild the catalog."],
+      ["reindex", "Rebuild the search index."],
     ],
     description: "Multiplayer Markdown for people and agents.",
     notes: [
@@ -142,6 +143,12 @@ const helpTopics: Readonly<Record<string, HelpTopic>> = {
     arguments: workspaceArgument,
     description: "Rebuild a workspace catalog from document checkpoints.",
     usage: ["inkling repair WORKSPACE"],
+  },
+  reindex: {
+    arguments: workspaceArgument,
+    description: "Rebuild a workspace's search index from current document state.",
+    notes: ["Requires a workspace administrator. Embeddings are recomputed in the background."],
+    usage: ["inkling reindex WORKSPACE"],
   },
   read: {
     arguments: documentTargetArguments,

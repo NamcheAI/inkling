@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
@@ -33,10 +33,6 @@ test(
     try {
       google = await startGoogleOAuthMock();
       running = await startWrangler(directory, google.origin);
-      const agentInstructions = await fetch(`${running.baseUrl}/AGENTS.md`);
-      assert.equal(agentInstructions.status, 200);
-      assert.match(agentInstructions.headers.get("content-type") ?? "", /^text\/markdown/u);
-      assert.ok((await agentInstructions.text()).includes(`base URL is ${running.baseUrl}`));
       const themeStylesheet = await fetch(`${running.baseUrl}/theme.css`);
       assert.equal(themeStylesheet.status, 200);
       const themeCss = await themeStylesheet.text();
@@ -161,6 +157,30 @@ test(
         Buffer.from(String(acceptedLiveUpdate["update"]), "base64"),
       );
       assert.equal(collaborationDocument.getText("body").toString(), changed.body);
+      // Typed updates reach the catalog through the throttled projection,
+      // not one projection per keystroke.
+      await typeTitle(
+        collaborationSocket.socket,
+        collaborationDocument,
+        "Cloudflare first",
+        "Typed",
+      );
+      await waitForCatalog(running.baseUrl, authorization, first.metadata.id, "Typed", 0, 200);
+      await typeTitle(
+        collaborationSocket.socket,
+        collaborationDocument,
+        "Typed",
+        "Cloudflare first",
+      );
+      await waitForCatalog(
+        running.baseUrl,
+        authorization,
+        first.metadata.id,
+        "Cloudflare first",
+        0,
+        200,
+      );
+      changed = await readDocument(running.baseUrl, first.metadata.id, authorization);
       collaborationSocket.socket.close();
       collaborationDocument.destroy();
       assert.match(
@@ -197,12 +217,42 @@ test(
       const searchResult = (await search.json()) as { documents: readonly DocumentWire[] };
       assert.equal(searchResult.documents[0]?.metadata.id, first.metadata.id);
       assert.deepEqual(searchResult.documents[0]?.metadata.labels, ["working"]);
+      const passageSearch = async () => {
+        const response = await fetch(`${running.baseUrl}/api/search?q=durable`, {
+          headers: authorization,
+        });
+        assert.equal(response.status, 200);
+        return (await response.json()) as {
+          passages: readonly { documentId: string; headingPath: readonly string[] }[];
+          semantic: boolean;
+        };
+      };
+      const passages = await passageSearch();
+      assert.equal(passages.semantic, false);
+      assert.deepEqual(
+        passages.passages.map((passage) => [passage.documentId, passage.headingPath]),
+        [[first.metadata.id, ["Newest projected title"]]],
+      );
+      const rebuild = await fetch(`${running.baseUrl}/api/admin/search/rebuild`, {
+        headers: authorization,
+        method: "POST",
+      });
+      assert.equal(rebuild.status, 200);
+      assert.deepEqual(await rebuild.json(), { errors: [], indexedDocuments: 2 });
+      assert.deepEqual(await passageSearch(), passages);
       const publication = await fetch(
         `${running.baseUrl}/api/documents/${first.metadata.id}/publish`,
         { headers: authorization, method: "POST" },
       );
       assert.equal(publication.status, 200);
       const publicationMetadata = (await publication.json()) as DocumentWire["metadata"];
+      const publicSearch = await fetch(`${running.baseUrl}/api/public/documents?q=durable`);
+      assert.deepEqual(
+        ((await publicSearch.json()) as { documents: readonly DocumentWire[] }).documents.map(
+          (document) => document.metadata.id,
+        ),
+        [first.metadata.id],
+      );
       assert.deepEqual(publicationMetadata.authors, [
         {
           displayName: "Armin Ronacher",
@@ -253,6 +303,26 @@ test(
         returnedProtected.headers.get("location"),
         "https://videos.example/watch?clip=cloudflare",
       );
+      // Signed-in readers get the application rendered on the server, with the
+      // route's data embedded for hydration and fingerprinted assets cached.
+      const renderedRfc = await fetch(`${running.baseUrl}/rfc/0001`, {
+        headers: { Cookie: returningCookie },
+      });
+      assert.equal(renderedRfc.status, 200);
+      assert.equal(renderedRfc.headers.get("Cache-Control"), "private, no-cache");
+      const renderedHtml = await renderedRfc.text();
+      assert.match(renderedHtml, /<div id="root"><div class=/u);
+      assert.match(renderedHtml, /data-reader=""/u);
+      assert.match(renderedHtml, />Armin Ronacher<\/a>/u);
+      assert.match(renderedHtml, /<script type="application\/json" id="inkling-initial-route">/u);
+      const entryScript = /<script type="module" crossorigin src="(\/assets\/[^"]+)"/u.exec(
+        renderedHtml,
+      )?.[1];
+      assert.ok(entryScript);
+      const asset = await fetch(`${running.baseUrl}${entryScript}`);
+      assert.equal(asset.status, 200);
+      assert.equal(asset.headers.get("Cache-Control"), "public, max-age=31536000, immutable");
+      await asset.arrayBuffer();
       const numericRfc = await fetch(`${running.baseUrl}/0001/`, { redirect: "manual" });
       assert.equal(numericRfc.status, 308);
       assert.equal(numericRfc.headers.get("location"), "/rfc/0001");
@@ -587,6 +657,34 @@ async function connectWebSocket(
   return { socket, welcomeStateUpdate: String(welcome["stateUpdate"]) };
 }
 
+async function typeTitle(
+  socket: WebSocket,
+  document: Y.Doc,
+  oldTitle: string,
+  title: string,
+): Promise<void> {
+  const body = document.getText("body");
+  const start = body.toString().indexOf(`# ${oldTitle}`) + 2;
+  assert.ok(start >= 2);
+  const update = new Promise<Uint8Array>((resolve) => document.once("update", resolve));
+  document.transact(() => {
+    body.delete(start, oldTitle.length);
+    body.insert(start, title);
+  });
+  const clientUpdateId = `cu_${randomUUID().replaceAll("-", "")}`;
+  const accepted = nextSocketMessage(socket);
+  socket.send(
+    JSON.stringify({
+      clientUpdateId,
+      type: "body-update",
+      update: Buffer.from(await update).toString("base64"),
+    }),
+  );
+  const message = await accepted;
+  assert.equal(message["type"], "update-accepted");
+  assert.equal(message["clientUpdateId"], clientUpdateId);
+}
+
 function nextSocketMessage(socket: WebSocket): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     socket.once("message", (data) => {
@@ -673,6 +771,7 @@ async function waitForCatalog(
   documentId: string,
   title: string,
   attempt = 0,
+  attempts = 100,
 ): Promise<void> {
   const response = await fetch(`${baseUrl}/api/documents`, { headers });
   const catalog = (await response.json()) as {
@@ -685,13 +784,13 @@ async function waitForCatalog(
   ) {
     return;
   }
-  if (attempt >= 99) {
+  if (attempt >= attempts - 1) {
     assert.fail(
       `The latest document projection did not reach the workspace authority: ${JSON.stringify(catalog.documents)}`,
     );
   }
   await delay(25);
-  return waitForCatalog(baseUrl, headers, documentId, title, attempt + 1);
+  return waitForCatalog(baseUrl, headers, documentId, title, attempt + 1, attempts);
 }
 
 async function loginWithGoogle(baseUrl: string, returnTo = "/"): Promise<string> {

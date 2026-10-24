@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { CSSProperties } from "react";
 
 import { DarkModeIcon, LightModeIcon } from "@earendil-works/elanor-icons-react";
@@ -6,13 +6,20 @@ import { IconButton, Layout, TopNavigation } from "@earendil-works/elanor-react"
 import type { PresenceDto } from "@earendil-works/inkling-protocol";
 
 import type { ApiClientService } from "../api.ts";
+import { useCurrentUrl } from "../app-context.tsx";
 import type { AppStatus } from "../app-context.tsx";
+import { signInHref } from "../ui.ts";
 import { AccountControl } from "./account-control.tsx";
 import type { AccountControlProps } from "./account-control.tsx";
 import styles from "./app-header.module.css";
 import { ButtonLink } from "./button-link.tsx";
-import { applyColorScheme, currentColorScheme, syncThemeColor } from "./color-scheme.ts";
-import type { ColorScheme } from "./color-scheme.ts";
+import {
+  applyColorScheme,
+  currentColorScheme,
+  serverColorScheme,
+  subscribeToColorScheme,
+  syncThemeColor,
+} from "./color-scheme.ts";
 
 export interface BreadcrumbItem {
   readonly href?: string | undefined;
@@ -38,25 +45,16 @@ export function AppHeader({
   participants,
   status,
 }: AppHeaderProps): React.JSX.Element {
-  const [scheme, setScheme] = useState<ColorScheme>(currentColorScheme);
+  const scheme = useSyncExternalStore(
+    subscribeToColorScheme,
+    currentColorScheme,
+    serverColorScheme,
+  );
   const navigation = useNavigationProgress(navigating);
+  const url = useCurrentUrl();
 
-  useEffect(() => {
-    syncThemeColor();
-    const systemScheme = matchMedia("(prefers-color-scheme: dark)");
-    const followSystem = (): void => {
-      setScheme(currentColorScheme());
-      syncThemeColor();
-    };
-    systemScheme.addEventListener("change", followSystem);
-    return () => systemScheme.removeEventListener("change", followSystem);
-  }, []);
+  useEffect(() => syncThemeColor(), [scheme]);
 
-  const toggleScheme = (): void => {
-    const next = currentColorScheme() === "dark" ? "light" : "dark";
-    applyColorScheme(next, true);
-    setScheme(next);
-  };
   const nextScheme = scheme === "dark" ? "light" : "dark";
 
   return (
@@ -137,7 +135,7 @@ export function AppHeader({
           {scheme === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
         </IconButton>
         {api === undefined ? null : account === undefined ? (
-          <ButtonLink data-sign-in="" href="/api/auth/google/start">
+          <ButtonLink data-sign-in="" href={signInHref(url)}>
             Sign in
           </ButtonLink>
         ) : (
@@ -146,6 +144,10 @@ export function AppHeader({
       </TopNavigation.Actions>
     </Layout.Header>
   );
+}
+
+function toggleScheme(): void {
+  applyColorScheme(currentColorScheme() === "dark" ? "light" : "dark", true);
 }
 
 /** Loading while navigating, then briefly complete so the progress bar can finish and fade. */
