@@ -18,7 +18,13 @@
       "medium": "16px",
       "large": "16px"
     },
-    "shadows": false
+    "shadows": false,
+    "controlPadding": {
+      "xSmall": "8px",
+      "small": "16px",
+      "medium": "16px",
+      "large": "32px"
+    }
   },
   "fonts": {
     "imports": [
@@ -101,9 +107,9 @@
         "text": "oklch(17.76% 0.0000 0.00)"
       },
       "private": {
-        "background": "oklch(96.05% 0.0046 258.32)",
-        "hover": "oklch(90.04% 0.0029 264.54)",
-        "border": "oklch(96.05% 0.0046 258.32)",
+        "background": "oklch(0% 0 0 / 0%)",
+        "hover": "oklch(96.05% 0.0046 258.32)",
+        "border": "oklch(17.76% 0.0000 0.00)",
         "text": "oklch(17.76% 0.0000 0.00)"
       },
       "confidential": {
@@ -204,9 +210,9 @@
         "text": "oklch(95.17% 0.0096 93.57)"
       },
       "private": {
-        "background": "oklch(33.68% 0.0000 0.00)",
-        "hover": "oklch(37.87% 0.0017 106.48)",
-        "border": "oklch(33.68% 0.0000 0.00)",
+        "background": "oklch(0% 0 0 / 0%)",
+        "hover": "oklch(33.68% 0.0000 0.00)",
+        "border": "oklch(95.17% 0.0096 93.57)",
         "text": "oklch(95.17% 0.0096 93.57)"
       },
       "confidential": {
