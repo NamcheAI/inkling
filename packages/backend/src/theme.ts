@@ -128,6 +128,15 @@ const ShapeSchema = Schema.Struct({
       small: Schema.optional(CssLength),
     }),
   ),
+  // Inline padding of controls: buttons, inputs, menus, and chips.
+  controlPadding: Schema.optional(
+    Schema.Struct({
+      large: Schema.optional(CssLength),
+      medium: Schema.optional(CssLength),
+      small: Schema.optional(CssLength),
+      xSmall: Schema.optional(CssLength),
+    }),
+  ),
   shadows: Schema.optional(Schema.Boolean),
 });
 
@@ -619,7 +628,7 @@ export function themeStylesheet(theme: ThemeConfiguration | undefined): string {
 }
 
 function shapeVariables(theme: ThemeConfiguration): readonly string[] {
-  const { borderWidth, radius, shadows } = theme.shape ?? {};
+  const { borderWidth, controlPadding, radius, shadows } = theme.shape ?? {};
   const weights = theme.fonts.weights;
   const values: Readonly<Record<string, string | number | undefined>> = {
     "--semantic-dimension-border-width-small": borderWidth?.small,
@@ -629,6 +638,10 @@ function shapeVariables(theme: ThemeConfiguration): readonly string[] {
     "--semantic-dimension-radius-small": radius?.small,
     "--semantic-dimension-radius-medium": radius?.medium,
     "--semantic-dimension-radius-large": radius?.large,
+    "--semantic-dimension-space-control-padding-inline-x-small": controlPadding?.xSmall,
+    "--semantic-dimension-space-control-padding-inline-small": controlPadding?.small,
+    "--semantic-dimension-space-control-padding-inline-medium": controlPadding?.medium,
+    "--semantic-dimension-space-control-padding-inline-large": controlPadding?.large,
     "--semantic-shadow-popup": shadows === false ? "none" : undefined,
     "--semantic-shadow-sticky": shadows === false ? "none" : undefined,
     // Elanor's typography roles alias these three weights directly.

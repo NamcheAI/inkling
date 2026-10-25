@@ -5,7 +5,7 @@
   max-inline-size: 100%;
   align-items: center;
   padding-block: var(--semantic-dimension-space-padding-xxx-small);
-  padding-inline: var(--semantic-dimension-space-padding-x-small);
+  padding-inline: var(--semantic-dimension-space-control-padding-inline-x-small);
   border-radius: var(--semantic-dimension-radius-small);
   box-shadow: inset 0 0 0 var(--semantic-dimension-border-width-small) var(--chip-border);
   background: var(--chip-background);

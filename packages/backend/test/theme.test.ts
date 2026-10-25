@@ -135,12 +135,19 @@ test("shape, weight, and brand overrides appear only when a theme sets them", ()
     ...inklingTheme,
     brand: { logo, logoAspectRatio: 5.25 },
     fonts: { ...inklingTheme.fonts, weights: { semiBold: 500 } },
-    shape: { borderWidth: { default: "0.5px" }, radius: { small: "0.75rem" }, shadows: false },
+    shape: {
+      borderWidth: { default: "0.5px" },
+      controlPadding: { small: "1rem", xSmall: "0.5rem" },
+      radius: { small: "0.75rem" },
+      shadows: false,
+    },
   };
   const stylesheet = themeStylesheet(shaped);
 
   assert.match(stylesheet, /--semantic-dimension-border-width-default: 0\.5px;/u);
   assert.match(stylesheet, /--semantic-dimension-radius-small: 0\.75rem;/u);
+  assert.match(stylesheet, /--semantic-dimension-space-control-padding-inline-x-small: 0\.5rem;/u);
+  assert.match(stylesheet, /--semantic-dimension-space-control-padding-inline-small: 1rem;/u);
   assert.match(stylesheet, /--semantic-shadow-popup: none;/u);
   assert.match(stylesheet, /--primitive-font-weight-semi-bold: 500;/u);
   assert.ok(stylesheet.includes(`--brand-logo: url("${logo}");`));

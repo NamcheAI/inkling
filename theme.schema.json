@@ -52,6 +52,17 @@
             "large": { "$ref": "#/$defs/length" }
           }
         },
+        "controlPadding": {
+          "type": "object",
+          "description": "Inline padding of controls: buttons, inputs, menus, and chips.",
+          "additionalProperties": false,
+          "properties": {
+            "xSmall": { "$ref": "#/$defs/length", "description": "Chips and compact controls." },
+            "small": { "$ref": "#/$defs/length", "description": "Buttons and fields." },
+            "medium": { "$ref": "#/$defs/length" },
+            "large": { "$ref": "#/$defs/length" }
+          }
+        },
         "shadows": { "type": "boolean", "description": "False removes popup and sticky shadows." }
       }
     },
