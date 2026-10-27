@@ -107,7 +107,7 @@ export async function startGoogleAuthentication(
   if (configuration.allowedDomains.length === 1) {
     authorization.searchParams.set("hd", configuration.allowedDomains[0] ?? "");
   }
-  const headers = new Headers({ Location: authorization.href });
+  const headers = new Headers({ "Cache-Control": "no-store", Location: authorization.href });
   headers.append(
     "Set-Cookie",
     cookieHeader("inkling_oauth", cookie, request, {
@@ -215,7 +215,7 @@ export async function finishGoogleAuthentication(
       })),
     );
     const session = await login(identity, people);
-    const headers = new Headers({ Location: payload.returnTo });
+    const headers = new Headers({ "Cache-Control": "no-store", Location: payload.returnTo });
     headers.append(
       "Set-Cookie",
       cookieHeader("inkling_session", session.sessionToken, request, {

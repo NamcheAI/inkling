@@ -106,7 +106,7 @@ test("reader pages render the document and embed its data with the request's cre
     { headers: { Cookie: "inkling_session=session" } },
   );
   assert.ok(response);
-  assert.equal(response.headers.get("Cache-Control"), "private, no-cache");
+  assert.equal(response.headers.get("Cache-Control"), "private, no-store");
   assert.match(response.headers.get("Content-Type") ?? "", /^text\/html/u);
   const html = await response.text();
 

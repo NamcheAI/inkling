@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Effect, Fiber } from "effect";
 
 import { Layout } from "@earendil-works/elanor-react";
 
@@ -13,6 +14,7 @@ import { preloadDocumentScreen, RouteView } from "./components/route-view.tsx";
 import { ToastRegion } from "./components/toast-region.tsx";
 import type { ToastController } from "./components/toast-region.tsx";
 import { useEffectQuery } from "./effect-hooks.ts";
+import { browserRuntime } from "./effect-runtime.ts";
 import { installClientRouter } from "./navigation.ts";
 import type { ClientRouter, NavigateOptions } from "./navigation.ts";
 import type { RouteData, RouteModel } from "./route-data.ts";
@@ -94,6 +96,30 @@ export function App({
       ? undefined
       : { data: initialRoute.model, key: routeQueryKey(initialRoute.path, 0) },
   );
+  useEffect(() => {
+    // A cross-site OAuth return can reach SSR without its Strict session
+    // cookie. Once on Inkling, check with browser credentials before keeping
+    // an anonymous server-rendered page for the lifetime of the application.
+    if (initialRoute === undefined || initialRoute.model.account !== undefined) return;
+    const fiber = browserRuntime.runFork(
+      makeApiClient(initialRoute.model.capabilityToken).authenticationStatus.pipe(
+        Effect.tap((authentication) =>
+          authentication.authenticated
+            ? Effect.sync(() => {
+                browserAuthentication.forget();
+                route.refresh();
+              })
+            : Effect.void,
+        ),
+        // Keep the rendered public page on a network failure.
+        Effect.ignore,
+      ),
+    );
+    return () => {
+      browserRuntime.runFork(Fiber.interrupt(fiber));
+    };
+  }, [initialRoute, route.refresh]);
+
   const navigating = route.state.status === "loading";
   const breadcrumbs = breadcrumbsForRoute(route.state.data, locationState.url, headerDocument);
   const pageTitle =

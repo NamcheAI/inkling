@@ -65,7 +65,10 @@ test(
       await waitForServer(baseUrl);
       const context = await browser.newContext();
       const first = await context.newPage();
-      await first.goto(baseUrl);
+      const anonymousResponse = await first.goto(baseUrl);
+      assert.ok(anonymousResponse);
+      assert.equal(anonymousResponse.headers()["cache-control"], "private, no-store");
+      const anonymousHtml = await anonymousResponse.text();
       await first.waitForSelector("[data-public-catalog]");
       assert.equal(
         await first.locator("[data-workspace-heading] p").textContent(),
@@ -75,9 +78,24 @@ test(
         (await first.locator("[data-empty-state]").textContent()) ?? "",
         /No public revisions have been published yet/u,
       );
+      const callbackResponse = first.waitForResponse(
+        (response) => new URL(response.url()).pathname === "/api/auth/google/callback",
+      );
       await first.getByRole("link", { name: "Sign in" }).click();
+      assert.equal((await callbackResponse).headers()["cache-control"], "no-store");
       await first.waitForSelector("[data-new-document]");
       await first.waitForSelector("main[data-workspace-layout]:not([data-public-catalog])");
+      // Reproduce a cached anonymous SSR page after OAuth has established a
+      // valid session. Hydration must reconcile with the browser's live status.
+      const stale = await context.newPage();
+      await stale.route(`${baseUrl}/`, (route) =>
+        route.fulfill({ body: anonymousHtml, contentType: "text/html" }),
+      );
+      await stale.goto(baseUrl);
+      await stale.waitForSelector("[data-new-document]", { timeout: 10_000 });
+      assert.equal(await stale.locator("[data-account-name]").textContent(), "Browser Admin");
+      await stale.close();
+
       assert.equal(await first.title(), "Inkling");
       assert.equal(await first.locator("[data-workspace-heading] > div > p").count(), 0);
       assert.equal(await first.locator("[data-workspace-heading] h1").textContent(), "Inkling");

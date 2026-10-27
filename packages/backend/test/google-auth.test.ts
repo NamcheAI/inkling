@@ -32,3 +32,18 @@ test("Google sign-in domain allowlists are normalized and matched exactly", () =
   assert.equal(isGoogleEmailAllowed("writer@example.com.attacker.invalid", domains), false);
   assert.equal(isGoogleEmailAllowed("missing-domain", domains), false);
 });
+
+test("Google sign-in redirects cannot be cached", async () => {
+  const response = await startGoogleAuthentication(
+    new Request("https://rfcs.example.com/api/auth/google/start"),
+    {
+      GOOGLE_ALLOWED_DOMAINS: "example.com",
+      GOOGLE_CLIENT_ID: "test-client",
+      GOOGLE_CLIENT_SECRET: "test-secret",
+    },
+  );
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.match(response.headers.get("Location") ?? "", /^https:\/\/accounts\.google\.com\//u);
+  assert.match(response.headers.get("Set-Cookie") ?? "", /SameSite=Lax; HttpOnly; Secure/u);
+});

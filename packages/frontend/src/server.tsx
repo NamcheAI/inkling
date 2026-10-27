@@ -62,7 +62,7 @@ export const renderApplication: typeof Contract.renderApplication = ({
   return new Response(request.method === "HEAD" ? null : body, {
     headers: {
       // Pages carry the reader's own data; never store them in shared caches.
-      "Cache-Control": "private, no-cache",
+      "Cache-Control": "private, no-store",
       "Content-Type": "text/html; charset=UTF-8",
       "Referrer-Policy": "strict-origin-when-cross-origin",
       "X-Content-Type-Options": "nosniff",

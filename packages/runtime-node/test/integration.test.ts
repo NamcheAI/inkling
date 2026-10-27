@@ -617,7 +617,7 @@ test("application pages render on the server with the reader's data", async () =
 
       const workspace = await fetch(`${baseUrl}/`, { headers: { Cookie: session.cookieHeader } });
       assert.equal(workspace.status, 200);
-      assert.equal(workspace.headers.get("Cache-Control"), "private, no-cache");
+      assert.equal(workspace.headers.get("Cache-Control"), "private, no-store");
       const workspaceHtml = await workspace.text();
       assert.match(workspaceHtml, new RegExp(`data-catalog-document-id="${documentId}"`, "u"));
       assert.match(workspaceHtml, /id="inkling-initial-route"/u);
