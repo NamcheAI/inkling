@@ -309,7 +309,7 @@ test(
         headers: { Cookie: returningCookie },
       });
       assert.equal(renderedRfc.status, 200);
-      assert.equal(renderedRfc.headers.get("Cache-Control"), "private, no-cache");
+      assert.equal(renderedRfc.headers.get("Cache-Control"), "private, no-store");
       const renderedHtml = await renderedRfc.text();
       assert.match(renderedHtml, /<div id="root"><div class=/u);
       assert.match(renderedHtml, /data-reader=""/u);
