@@ -18,6 +18,6 @@
     "@earendil-works/inkling-protocol": "workspace:*",
     "@earendil-works/inkling-renderer": "workspace:*",
     "effect": "3.22.1",
-    "hono": "4.13.0"
+    "hono": "4.13.16"
   }
 }
